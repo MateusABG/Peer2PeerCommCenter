@@ -10,7 +10,7 @@ $("meCode").textContent = code;
 $("leaveBtn").addEventListener("click", leave);
 
 function leave() {
-  location.href = "login.html";   // network.js closes the connections on pagehide
+  location.href = "index.html";   // network.js closes the connections on pagehide
 }
 
 function show(v) {
