@@ -1,0 +1,54 @@
+#v-stream{overflow-y:auto;padding-bottom:20px}
+#v-stream > :not(h3){margin-left:24px;margin-right:24px}
+
+.strWind{
+  position:relative;
+  width:calc(100% - 48px);
+  max-width:960px;
+  margin-top:18px;
+  aspect-ratio:16 / 9;
+  background:#000;
+  border:2px solid #2a0000;
+  border-radius:28px;
+  overflow:hidden;
+}
+.strWind video{width:100%;height:100%;object-fit:contain;background:#000}
+.strWind .placeholder{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)}
+
+/* streamer name: red, bottom-left of the main screen */
+.lbl{position:absolute;font-weight:700;pointer-events:none;text-shadow:0 1px 4px #000,0 0 2px #000}
+.lbl.main{left:28px;bottom:16px;font-size:1.3rem;color:#ff2b3d}
+
+.thumbsWind{
+  display:flex;
+  gap:12px;
+  max-width:960px;
+  margin-top:14px;
+  padding-bottom:6px;
+  overflow-x:auto;
+}
+.thumb{
+  position:relative;
+  flex:0 0 auto;
+  width:170px;
+  aspect-ratio:16 / 9;
+  background:#000;
+  border:2px solid #2a0000;
+  border-radius:18px;
+  overflow:hidden;
+  cursor:pointer;
+  transition:border-color .15s, transform .15s;
+}
+.thumb:hover,.thumb:focus-visible{border-color:var(--line);transform:translateY(-2px)}
+.thumb video{width:100%;height:100%;object-fit:cover;pointer-events:none}
+/* streamer name: blue, top-right of the thumbnail */
+.thumb .lbl{top:6px;right:12px;font-size:.95rem;color:#19a8ff}
+
+.streamBtn{
+  margin-top:16px;align-self:flex-start;
+  height:44px;padding:0 22px;
+  background:#000;color:var(--red);
+  border:2px solid var(--red);border-radius:0 18px 0 0;
+  font-weight:700;cursor:pointer;
+}
+.streamBtn:hover{background:#1a0000}

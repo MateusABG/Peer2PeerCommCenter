@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Room · P2P Chatrooms</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/room.css">
+<link rel="stylesheet" href="css/streaming.css">
+</head>
+<body>
+
+<section id="room">
+  <aside class="left">
+    <div class="me">
+      <div class="name" id="meName">Username</div>
+      <div class="code">Room <b id="meCode">------</b></div>
+    </div>
+    <nav aria-label="Room sections">
+      <button data-view="chat" aria-current="page" id="chat" >Chat room</button>
+      <button data-view="stream" id="stream" >Stream room</button>
+      <button data-view="board" id="board" >Whiteboard room</button>
+      <button id="leaveBtn" class="leave">Leave</button>
+    </nav>
+    <div class="count">Users in room: <span id="userCount">1</span></div>
+  </aside>
+
+  <main>
+    <div class="view" id="v-chat">
+      <h3>Chat room</h3>
+      <div class="msgs" id="msgs" aria-live="polite"></div>
+      <div class="compose">
+        <input type="file" id="imgInput" accept="image/*" hidden>
+        <button type="button" class="attach" id="attachBtn" aria-label="Send an image" title="Send an image">+ Image</button>
+        <input class="input" id="msgInput" placeholder="Write a message (or paste an image)" aria-label="Message">
+        <button class="btn" id="sendBtn">Send</button>
+      </div>
+    </div>
+
+    <div class="view" id="v-stream" hidden>
+      <h3>Stream room</h3>
+      <div id="streamWindow" class="strWind">
+        <div class="placeholder" id="strEmpty">Nobody is streaming yet</div>
+        <span class="lbl main" id="mainLabel" hidden></span>
+      </div>
+      <div id="thumbs" class="thumbsWind"></div>
+      <button id="startStream" class="streamBtn">Start Streaming</button>
+    </div>
+
+    <div class="view" id="v-board" hidden>
+      <h3>Whiteboard room</h3> 
+      <div class="wb">
+        <div class="tools" id="wbtools"><button class="pill" id="clr">Clear</button></div>
+        <div class="tip">Tip: turn your phone sideways for a bigger board</div>
+        <div class="cv"><canvas id="cv" width="1200" height="700"></canvas></div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="right">
+    <h4>Users</h4>
+    <ul class="users" id="userList"></ul>
+    <button class="mic" id="micBtn" aria-pressed="false">Mic off</button>
+  </aside>
+</section>
+ 
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/room.js"></script> 
+<script src="js/whiteboard.js"></script>
+<script src="js/streaming.js"></script>
+<script src="js/network.js"></script>
+</body>
+</html>

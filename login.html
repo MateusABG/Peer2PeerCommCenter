@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>P2P Chatrooms</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/login.css">
+</head>
+<body>
+
+<section id="login">
+  <div class="card">
+    <header>
+      <h1>P2P Chatrooms</h1>
+      <p>Connect with your friends. Chat privately.</p>
+    </header>
+    <div class="cols">
+      <div class="col">
+        <h2>Create a room</h2>
+        <p class="sub">Start a room and share the code with your friends.</p>
+        <div class="field">
+          <label for="cName">Your name</label>
+          <input class="input" id="cName" maxlength="20" autocomplete="nickname" placeholder="e.g. Maya">
+        </div>
+        <div class="codebox">
+          <small>Your room code</small>
+          <strong id="newCode" aria-live="polite">------</strong>
+          <button type="button" id="copyBtn">Copy code</button>
+        </div>
+        <p class="err" id="cErr" role="alert"></p>
+        <button class="btn" id="createBtn">Create room</button>
+      </div>
+      <div class="col">
+        <h2>Join a room</h2>
+        <p class="sub">Have a code? Join an existing room and chat with friends.</p>
+        <div class="field">
+          <label for="jName">Your name</label>
+          <input class="input" id="jName" maxlength="20" autocomplete="nickname" placeholder="e.g. Leo">
+        </div>
+        <div class="field">
+          <label for="jCode">Room code</label>
+          <input class="input" id="jCode" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="6 characters">
+        </div>
+        <p class="err" id="jErr" role="alert"></p>
+        <button class="btn" id="joinBtn">Join room</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="js/config.js"></script>
+<script src="js/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+/* ---------- Login ---------- */
+#login{min-height:100%;display:grid;place-items:center;padding:24px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,#000 0%,#3a0000 100%)}
+#login::before,#login::after{content:"";position:absolute;width:140px;height:520px;background:
+  linear-gradient(90deg,var(--line) 0 55%,transparent 55% 70%,var(--line) 70% 100%);transform:rotate(-45deg);opacity:.9;pointer-events:none}
+#login::before{top:-250px;right:-120px}
+#login::after{bottom:-250px;left:-120px}
+.card{position:relative;z-index:1;width:min(980px,100%);background:var(--panel);border:3px solid var(--line);border-radius:36px;overflow:hidden}
+.card header{text-align:center;padding:26px 16px 18px;border-bottom:3px solid var(--line)}
+.card h1{margin:0;font-size:clamp(2rem,5vw,3rem);color:var(--red);letter-spacing:.01em}
+.card header p{margin:2px 0 0}
+.cols{display:grid;grid-template-columns:1fr 1fr}
+.col{padding:28px clamp(20px,4vw,48px) 36px;display:flex;flex-direction:column;gap:14px}
+.col+.col{border-left:3px solid var(--line)}
+.col h2{margin:0;color:var(--red);font-size:1.7rem}
+.col .sub{margin:0 0 10px;color:var(--muted);font-size:.95rem}
+label{font-size:.9rem;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:6px}
+.input,.btn{border-radius:0 22px 0 0;height:52px;width:100%;padding:0 16px;border:2px solid var(--red);background:#000}
+.input::placeholder{color:#6d5a5a}
+.btn{background:var(--red);color:#000;font-weight:700;cursor:pointer;margin-top:6px;transition:background .15s}
+.btn:hover{background:var(--line)}
+.codebox{background:var(--deep);border-radius:10px;padding:14px 16px;text-align:center;margin-top:8px}
+.codebox small{display:block;font-weight:600}
+.codebox strong{display:block;font-size:2.4rem;letter-spacing:.14em;line-height:1.15}
+.codebox button{margin-top:6px;background:none;border:0;color:#ffb3b3;text-decoration:underline;cursor:pointer;font-size:.9rem}
+.err{min-height:1.2em;margin:0;color:#ff7a7a;font-size:.9rem}
+@media(max-width:720px){.cols{grid-template-columns:1fr}.col+.col{border-left:0;border-top:3px solid var(--line)}}
