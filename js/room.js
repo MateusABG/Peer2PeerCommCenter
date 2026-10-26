@@ -1,6 +1,6 @@
 // config.js already provides: name, code, isHost, params
 if (!name || !/^[A-Z0-9]{6}$/.test(code)) {
-  location.replace("login.html");
+  location.replace("index.html");
 }
 
 var list = $("userList");

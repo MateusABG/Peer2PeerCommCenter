@@ -1,5 +1,5 @@
 #v-stream{overflow-y:auto;padding-bottom:20px}
-#v-stream > :not(h3){margin-left:24px;margin-right:24px}
+#v-stream > :not(h3){margin-left:15%;margin-right:15%}
 
 .strWind{
   position:relative;
@@ -52,3 +52,4 @@
   font-weight:700;cursor:pointer;
 }
 .streamBtn:hover{background:#1a0000}
+ 

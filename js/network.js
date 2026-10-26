@@ -1,17 +1,3 @@
-/* ---------------------------------------------------------------------------
- * Peer-to-peer networking for the room (PeerJS / WebRTC)
- *
- * Topology
- *   - The room creator is the HOST. Its peer id is ROOM_PREFIX + room code,
- *     so anybody who knows the code can find it.
- *   - Guests connect to the host with a data connection (chat, whiteboard,
- *     user list). The host relays messages, so everyone sees everything.
- *   - Screen sharing and voice use direct media calls between peers
- *     (the host's roster tells everybody who is in the room).
- *   - If the host leaves, the room closes.
- *
- * Needs (loaded before): config.js, room.js, whiteboard.js, streaming.js
- * ------------------------------------------------------------------------- */
 (function () {
   "use strict";
 
@@ -21,6 +7,7 @@
   var CONNECT_TIMEOUT = 15000;
   var MAX_IMG_CHARS = 1500000; // ~1.1 MB of image data per chat image
   var MAX_IMG_HISTORY = 8;     // images the host replays to late joiners
+  var MAX_FILE = 10 * 1024 * 1024;   // 10 MB per shared file (it is relayed to everyone)
   var IMG_RE = /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+\/=]+$/;
 
   var peer;
@@ -31,8 +18,8 @@
   var history = [];                         // host only
   var myStatus = { mic: false, screen: false };
 
-  var outCalls = {};      // "kind:peerId" -> MediaConnection we started
-  var voiceEls = {};      // peerId -> <audio>
+  var outCalls = {};      
+  var voiceEls = {};      
   var screenStream = null;
   var micStream = null;
 
@@ -42,6 +29,24 @@
 
   function cleanImg(v) {
     return (typeof v === "string" && v.length <= MAX_IMG_CHARS && IMG_RE.test(v)) ? v : null;
+  }
+
+  function safeFileName(n) {
+    n = clip(n, 120).replace(/[\\\/:*?"<>|\u0000-\u001f]/g, "_").replace(/^\.+/, "").trim();
+    return n || "file";
+  }
+  function cleanFile(f) {
+    if (!f || typeof f !== "object") return null;
+    var buf = f.buf;
+    if (ArrayBuffer.isView(buf)) buf = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    else if (Object.prototype.toString.call(buf) !== "[object ArrayBuffer]") return null;
+    if (buf.byteLength === 0 || buf.byteLength > MAX_FILE) return null;
+    return { name: safeFileName(f.name), buf: buf };
+  }
+  function fmtSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(1) + " MB";
   }
 
   function send(conn, msg) {
@@ -61,7 +66,32 @@
     document.body.appendChild(box);
   }
 
-  function addMessage(from, text, mine, isSys, img) {
+  function fileCard(file) {
+    // always an opaque binary blob: the browser downloads it, it never runs or renders it
+    var url = URL.createObjectURL(new Blob([file.buf], { type: "application/octet-stream" }));
+    var card = document.createElement("div");
+    card.className = "file";
+    var info = document.createElement("div");
+    info.className = "finfo";
+    var nm = document.createElement("span");
+    nm.className = "fname";
+    nm.textContent = file.name;
+    var sz = document.createElement("span");
+    sz.className = "fsize";
+    sz.textContent = fmtSize(file.buf.byteLength);
+    info.appendChild(nm);
+    info.appendChild(sz);
+    var a = document.createElement("a");
+    a.className = "fdl";
+    a.href = url;
+    a.download = file.name;
+    a.textContent = "Download";
+    card.appendChild(info);
+    card.appendChild(a);
+    return card;
+  }
+
+  function addMessage(from, text, mine, isSys, img, file) {
     var box = $("msgs");
     var d = document.createElement("div");
     d.className = "msg" + (mine ? " mine" : "") + (isSys ? " sys" : "");
@@ -80,6 +110,7 @@
       im.onload = function () { if (nearBottom) box.scrollTop = box.scrollHeight; };
       d.appendChild(im);
     }
+    if (file) d.appendChild(fileCard(file));
     box.appendChild(d);
     if (nearBottom) box.scrollTop = box.scrollHeight;
   }
@@ -106,7 +137,7 @@
   function goHome(msg, delay) {
     leaving = true;
     if (msg) sysLocal(msg);
-    setTimeout(function () { location.href = "login.html"; }, delay || 0);
+    setTimeout(function () { location.href = "index.html"; }, delay || 0);
   }
 
   /* ------------------------- roster (all peers) ------------------------ */
@@ -142,17 +173,25 @@
   };
 
   /* ------------------------------- chat -------------------------------- */
-  function sendChat(text, img) {
+  // files are not kept in the host's history (too big): late joiners just see a note
+  function rememberChat(m) {
+    var h = { type: "chat", id: m.id, name: m.name, text: m.text, img: m.img };
+    if (m.file) h.text = (m.text ? m.text + " " : "") + "[shared file: " + m.file.name + " - not available to late joiners]";
+    remember(h);
+  }
+
+  function sendChat(text, img, file) {
     text = clip(text, MAX_TEXT).trim();
     img = cleanImg(img);
-    if (!text && !img) return;
-    addMessage(name, text, true, false, img);
+    file = cleanFile(file);
+    if (!text && !img && !file) return;
+    addMessage(name, text, true, false, img, file);
     if (isHost) {
-      var m = { type: "chat", id: myId, name: name, text: text, img: img };
-      remember(m);
+      var m = { type: "chat", id: myId, name: name, text: text, img: img, file: file };
+      rememberChat(m);
       broadcast(m);
     } else {
-      send(hostConn, { type: "chat", text: text, img: img });
+      send(hostConn, { type: "chat", text: text, img: img, file: file });
     }
   }
   window.sendChat = sendChat;
@@ -197,25 +236,58 @@
     });
   }
 
-  function sendImageFile(file) {
-    if (!file || !/^image\//.test(file.type)) return;
-    if (file.size > 25 * 1024 * 1024) { alert("That image is too large (25 MB max)."); return; }
-    compressImage(file)
-      .then(function (data) { sendChat("", data); })
-      .catch(function () { alert("Could not send that image."); });
+  function readBuffer(file) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+      r.readAsArrayBuffer(file);
+    });
   }
+
+  function sendRawFile(file) {
+    if (file.size === 0) { alert("\"" + file.name + "\" is empty."); return; }
+    if (file.size > MAX_FILE) {
+      alert("\"" + file.name + "\" is too large (" + fmtSize(MAX_FILE) + " max per file).");
+      return;
+    }
+    readBuffer(file)
+      .then(function (buf) { sendChat("", null, { name: file.name, buf: buf }); })
+      .catch(function () { alert("Could not read \"" + file.name + "\"."); });
+  }
+
+  // pictures are shown inline (and shrunk); everything else becomes a download card
+  function sendAnyFile(file) {
+    if (!file) return;
+    if (/^image\//.test(file.type) && file.size <= 25 * 1024 * 1024) {
+      compressImage(file)
+        .then(function (data) { sendChat("", data); })
+        .catch(function () { sendRawFile(file); });   // e.g. HEIC: send it as a plain file
+    } else {
+      sendRawFile(file);
+    }
+  }
+  window.sendAnyFile = sendAnyFile;
+
+  // the attach button now accepts every kind of file
+  $("imgInput").removeAttribute("accept");
+  $("imgInput").multiple = true;
+  $("attachBtn").textContent = "+ File";
+  $("attachBtn").title = "Send a file";
+  $("attachBtn").setAttribute("aria-label", "Send a file");
+  $("msgInput").placeholder = "Write a message (or paste / drop a file)";
 
   $("attachBtn").addEventListener("click", function () { $("imgInput").click(); });
   $("imgInput").addEventListener("change", function () {
-    Array.prototype.forEach.call(this.files, sendImageFile);
+    Array.prototype.forEach.call(this.files, sendAnyFile);
     this.value = "";
   });
   $("msgInput").addEventListener("paste", function (e) {
     var items = (e.clipboardData && e.clipboardData.items) || [];
     for (var i = 0; i < items.length; i++) {
-      if (items[i].kind === "file" && /^image\//.test(items[i].type)) {
+      if (items[i].kind === "file") {
         e.preventDefault();
-        sendImageFile(items[i].getAsFile());
+        sendAnyFile(items[i].getAsFile());
       }
     }
   });
@@ -228,7 +300,7 @@
   });
   msgsBox.addEventListener("drop", function (e) {
     e.preventDefault();
-    Array.prototype.forEach.call((e.dataTransfer && e.dataTransfer.files) || [], sendImageFile);
+    Array.prototype.forEach.call((e.dataTransfer && e.dataTransfer.files) || [], sendAnyFile);
   });
 
   $("sendBtn").addEventListener("click", function () {
@@ -444,10 +516,11 @@
     if (d.type === "chat") {
       var text = clip(d.text, MAX_TEXT).trim();
       var img = cleanImg(d.img);
-      if (!text && !img) return;
-      var m = { type: "chat", id: conn.peer, name: conn.userName, text: text, img: img };
-      addMessage(m.name, m.text, false, false, img);
-      remember(m);
+      var file = cleanFile(d.file);
+      if (!text && !img && !file) return;
+      var m = { type: "chat", id: conn.peer, name: conn.userName, text: text, img: img, file: file };
+      addMessage(m.name, m.text, false, false, img, file);
+      rememberChat(m);
       broadcast(m, conn);
     } else if (d.type === "status") {
       var u = users.filter(function (x) { return x.id === conn.peer; })[0];
@@ -509,7 +582,7 @@
         setUsers(d.users);
         break;
       case "chat":
-        addMessage(clip(d.name, 20), clip(d.text, MAX_TEXT), false, false, cleanImg(d.img));
+        addMessage(clip(d.name, 20), clip(d.text, MAX_TEXT), false, false, cleanImg(d.img), cleanFile(d.file));
         break;
       case "sys":
         sysLocal(clip(d.text, MAX_TEXT));
@@ -551,8 +624,7 @@
         clearTimeout(timer);
         if (leaving) return;
         goHome("The host left. This room is closed.", 3000);
-      });
-      hostConn.on("error", function () { /* "close" follows */ });
+      }); 
     });
 
     peer.on("error", function (err) {
@@ -567,8 +639,7 @@
       }
     });
   }
-
-  /* -------------------------------- start ------------------------------ */
+ 
   renderUsers();
 
   if (typeof Peer === "undefined") {
@@ -579,8 +650,7 @@
   if (isHost) initHost(); else initGuest();
 
   peer.on("call", onIncomingCall);
-
-  // keep the signalling link alive so new people can still find the room
+ 
   peer.on("disconnected", function () {
     if (leaving) return;
     setTimeout(function () { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 1500);
