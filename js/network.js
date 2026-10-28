@@ -1,7 +1,9 @@
 (function () {
   "use strict";
-
-  var MAX_USERS = 10;          // media calls are a mesh, keep rooms small
+  var pwSalt = null, pwProof = null;
+  var pwRecord = null;
+  var failTimes = [];
+  var MAX_USERS = 10;
   var MAX_TEXT = 500;
   var MAX_HISTORY = 100;       // chat lines the host replays to late joiners
   var CONNECT_TIMEOUT = 15000;
@@ -9,24 +11,110 @@
   var MAX_IMG_HISTORY = 8;     // images the host replays to late joiners
   var MAX_FILE = 10 * 1024 * 1024;   // 10 MB per shared file (it is relayed to everyone)
   var IMG_RE = /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+\/=]+$/;
-
+  var MEDIA_KINDS = ["screen", "camera", "voice"];
+  var PREFIX = { screen: "s:", camera: "c:" };       // stream-id prefix per video kind
+  var cameraStream = null;
+  var myStatus = { mic: false, screen: false, cam: false };
   var peer;
   var myId = null;
   var users = [{ id: null, name: name }];   // [{id, name}] - same list on every peer
   var joined = isHost;
   var leaving = false;
   var history = [];                         // host only
-  var myStatus = { mic: false, screen: false };
 
-  var outCalls = {};      
-  var voiceEls = {};      
+  var outCalls = {};
+  var voiceEls = {};
   var screenStream = null;
   var micStream = null;
+  var replaying = false;
+  var locked = false;
 
-  /* ------------------------------ helpers ------------------------------ */
+  var hub = null;
+  var recovering = false;
+  var welcomed = false;
+  var nextHost = null;
+  var giveUpAt = 0;
+  var GRACE = 12000;
+
+  var sharedNotesText = "";
+  var polls = {};
+  var syncedMediaState = null;
+
+  
+
+  function addPollMessage(poll, mine) {
+    var box = $("msgs");
+    var message = document.createElement("div");
+
+    message.className = "msg poll-message" + (mine ? " mine" : "");
+    message.dataset.pollId = poll.id;
+    var author = document.createElement("small");
+    author.textContent = mine ? "You" : (poll.name || "Poll");
+    message.appendChild(author);
+
+    var card = pollCardEl(poll, function (pollId, optionIndex) {
+      if (window.voteInPoll) {
+        window.voteInPoll(pollId, optionIndex);
+      }
+    });
+
+    message.appendChild(card);
+    box.appendChild(message);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function refreshPollMessage(poll) {
+    if (!poll || typeof poll.id !== "string") return;
+
+    var oldMessage = Array.from(document.querySelectorAll(".poll-message"))
+      .find(function (element) {
+        return element.dataset.pollId === poll.id;
+      });
+
+    if (!oldMessage) {
+      addPollMessage(poll, poll.creatorId === myId);
+      return;
+    }
+
+    var message = document.createElement("div");
+    var mine = poll.creatorId === myId;
+    message.className = "msg poll-message" + (mine ? " mine" : "");
+    message.dataset.pollId = poll.id;
+
+    var author = document.createElement("small");
+    author.textContent = mine ? "You" : (poll.name || "Poll");
+    message.appendChild(author);
+    message.appendChild(pollCardEl(poll, function (pollId, optionIndex) {
+      if (typeof window.voteInPoll === "function") {
+        window.voteInPoll(pollId, optionIndex);
+      }
+    }));
+
+    oldMessage.replaceWith(message);
+  }
+  window.refreshPollMessage = refreshPollMessage;
+
+  function setPwUi(on) { if ($("pwTag")) $("pwTag").hidden = !on; }
+
+  function setupPassword() {
+    var plain = null;
+    try { plain = sessionStorage.getItem("roomPw"); sessionStorage.removeItem("roomPw"); } catch (e) { }
+    if (!plain) return Promise.resolve();                        // no password: open room
+    if (!(window.crypto && crypto.subtle)) return Promise.reject("Password rooms need HTTPS (or localhost).");
+    var salt = newSalt();
+    return deriveProof(plain, salt).then(function (proof) {
+      pwSalt = salt; pwProof = proof;
+      pwRecord = { salt: salt, proof: proof };
+      setPwUi(true);
+    });
+  }
+
   function clip(s, n) { return String(s == null ? "" : s).slice(0, n); }
   function cleanName(s) { return clip(s, 20).replace(/\s+/g, " ").trim(); }
-
+  function connOf(id) { return conns.filter(function (c) { return c.peer === id; })[0]; }
+  function snippet(text, img, file) {
+    return clip(text || (img ? "📷 Photo" : file ? "📎 " + file.name : ""), 80);
+  }
   function cleanImg(v) {
     return (typeof v === "string" && v.length <= MAX_IMG_CHARS && IMG_RE.test(v)) ? v : null;
   }
@@ -91,7 +179,7 @@
     return card;
   }
 
-  function addMessage(from, text, mine, isSys, img, file) {
+  function addMessage(from, text, mine, isSys, img, file, meta) {
     var box = $("msgs");
     var d = document.createElement("div");
     d.className = "msg" + (mine ? " mine" : "") + (isSys ? " sys" : "");
@@ -113,6 +201,100 @@
     if (file) d.appendChild(fileCard(file));
     box.appendChild(d);
     if (nearBottom) box.scrollTop = box.scrollHeight;
+
+    if (!mine && !isSys && !replaying && !chatVisible()) {
+      unread++;
+      renderUnread();
+      if (window.Notifier) Notifier.messageArrived(from, text, img, file);
+    }
+
+    meta = meta || {};
+    if (meta.mid) {
+      d.dataset.mid = meta.mid;
+      d.tabIndex = 0;
+      seen[meta.mid] = { name: from, text: snippet(text, img, file) };
+    }
+    if (meta.reply) d.appendChild(quoteEl(meta.reply));
+    if (meta.mid) {
+      var row = document.createElement("div");
+      row.className = "reacts";
+      d.appendChild(row);
+      d.appendChild(actionsEl(meta.mid));
+    }
+  }
+  function pollCardEl(poll, onVote) {
+    var myVote = poll.votes &&
+      Object.prototype.hasOwnProperty.call(poll.votes, myId)
+      ? poll.votes[myId]
+      : null;
+
+    var card = document.createElement("div");
+    card.className = "poll-card";
+
+    var title = document.createElement("h4");
+    title.textContent = "📊 " + poll.question;
+    card.appendChild(title);
+
+    var counts = poll.counts || poll.options.map(function () {
+      return 0;
+    });
+
+    var total = counts.reduce(function (sum, count) {
+      return sum + count;
+    }, 0);
+
+    var options = document.createElement("div");
+    options.className = "poll-options";
+
+    poll.options.forEach(function (option, i) {
+      var count = counts[i] || 0;
+      var percent = total ? Math.round(count / total * 100) : 0;
+
+      var item = document.createElement("div");
+      item.className = "poll-result";
+
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "poll-option";
+      button.textContent = option;
+
+      if (myVote === i) button.classList.add("selected");
+
+      button.disabled = !!poll.closed || myVote != null;
+
+      button.addEventListener("click", function () {
+        if (typeof onVote === "function") {
+          onVote(poll.id, i);
+        }
+      });
+
+      var result = document.createElement("div");
+      result.className = "poll-result-bar";
+
+      var fill = document.createElement("div");
+      fill.className = "poll-result-fill";
+      fill.style.width = percent + "%";
+      result.appendChild(fill);
+
+      var stats = document.createElement("div");
+      stats.className = "poll-result-stats";
+      stats.textContent = count + (count === 1 ? " vote" : " votes")
+        + " · " + percent + "%";
+
+      item.appendChild(button);
+      item.appendChild(result);
+      item.appendChild(stats);
+      options.appendChild(item);
+    });
+
+    card.appendChild(options);
+
+    var totalText = document.createElement("p");
+    totalText.className = "poll-total";
+    totalText.textContent = total + (total === 1 ? " vote" : " votes");
+    card.appendChild(totalText);
+
+    return card;
   }
 
   function sysLocal(text) { addMessage("", text, false, true); }
@@ -128,7 +310,8 @@
     list.innerHTML = "";
     users.forEach(function (u) {
       var me = u.id === myId;
-      add(u.name, me, me ? myStatus : u);
+      add(u.name, me, me ? Object.assign({ host: u.host }, myStatus) : u);
+      if (window.Speaking) Speaking.decorate(list.lastChild, u.id);
     });
     $("userCount").textContent = users.length;
     if (window.refreshStreamLabels) window.refreshStreamLabels();
@@ -147,9 +330,15 @@
     users = next.filter(function (u) {
       return u && typeof u.id === "string" && typeof u.name === "string";
     }).map(function (u) {
-      return { id: u.id, name: clip(u.name, 20), mic: !!u.mic, screen: !!u.screen };
+      return {
+        id: u.id, name: clip(u.name, 20), mic: !!u.mic, screen: !!u.screen,
+        cam: !!u.cam, host: !!u.host, hmute: !!u.hmute
+      };
     });
     renderUsers();
+    users.forEach(function (u) {
+      if (window.Voices && u.id !== myId) Voices.hostMute(u.id, u.hmute);
+    });
 
     var ids = users.map(function (u) { return u.id; });
     prev.forEach(function (id) { if (id && id !== myId && ids.indexOf(id) < 0) cleanupPeer(id); });
@@ -159,15 +348,15 @@
   // mic / streaming status: shown next to every name in the user list
   function publishStatus() {
     var me = users.filter(function (u) { return u.id === myId; })[0];
-    if (me) { me.mic = myStatus.mic; me.screen = myStatus.screen; }
+    if (me) { me.mic = myStatus.mic; me.screen = myStatus.screen; me.cam = myStatus.cam; }
     renderUsers();
     if (isHost) broadcast({ type: "roster", users: users });
-    else send(hostConn, { type: "status", mic: myStatus.mic, screen: myStatus.screen });
+    else send(hostConn, { type: "status", mic: myStatus.mic, screen: myStatus.screen, cam: myStatus.cam });
   }
 
   // streaming.js asks who owns a stream ("s:<peerId>")
   window.nameOfStream = function (id) {
-    var pid = String(id).replace(/^s:/, "");
+    var pid = String(id).replace(/^[sc]:/, "");   // strips "s:" (screen) or "c:" (camera)
     var u = users.filter(function (x) { return x.id === pid; })[0];
     return u ? u.name : "";
   };
@@ -175,7 +364,7 @@
   /* ------------------------------- chat -------------------------------- */
   // files are not kept in the host's history (too big): late joiners just see a note
   function rememberChat(m) {
-    var h = { type: "chat", id: m.id, name: m.name, text: m.text, img: m.img };
+    var h = { type: "chat", id: m.id, name: m.name, text: m.text, img: m.img, mid: m.mid, reply: m.reply };
     if (m.file) h.text = (m.text ? m.text + " " : "") + "[shared file: " + m.file.name + " - not available to late joiners]";
     remember(h);
   }
@@ -185,18 +374,35 @@
     img = cleanImg(img);
     file = cleanFile(file);
     if (!text && !img && !file) return;
-    addMessage(name, text, true, false, img, file);
+
+    var mid = newMid();
+    var target = replyingTo && seen[replyingTo] ? seen[replyingTo] : null;
+    var q = target ? {
+      mid: replyingTo,
+      name: target.name,
+      text: target.text
+    } : null;
+
+    addMessage(name, text, true, false, img, file, { mid: mid, reply: q });
+
     if (isHost) {
-      var m = { type: "chat", id: myId, name: name, text: text, img: img, file: file };
+      var m = {
+        type: "chat", id: myId, name: name, text: text,
+        img: img, file: file, mid: mid, reply: q
+      };
+      indexMsg(mid, name, snippet(text, img, file));
       rememberChat(m);
       broadcast(m);
     } else {
-      send(hostConn, { type: "chat", text: text, img: img, file: file });
+      send(hostConn, {
+        type: "chat", text: text, img: img, file: file,
+        mid: mid, reply: q ? q.mid : null
+      });
+      rememberChat({ id: myId, name: name, text: text, img: img, file: file, mid: mid, reply: q });
     }
+    cancelReply();
   }
   window.sendChat = sendChat;
-
-  /* ---- sending images: file button, paste, drag & drop ---- */
   function fileToDataUrl(file) {
     return new Promise(function (res, rej) {
       var r = new FileReader();
@@ -209,7 +415,7 @@
   // shrink big pictures so they travel fast: max 1280px, JPEG, retry smaller until it fits
   function compressImage(file) {
     return fileToDataUrl(file).then(function (raw) {
-      if (file.type === "image/gif" && raw.length <= MAX_IMG_CHARS) return raw;   // keep animation
+      if (file.type === "image/gif" && raw.length <= MAX_IMG_CHARS) return raw;
       return new Promise(function (res, rej) {
         var im = new Image();
         im.onerror = function () { rej(new Error("not an image")); };
@@ -221,7 +427,7 @@
             c.width = Math.max(1, Math.round(im.width * k));
             c.height = Math.max(1, Math.round(im.height * k));
             var g = c.getContext("2d");
-            g.fillStyle = "#fff";            // JPEG has no transparency
+            g.fillStyle = "#fff";
             g.fillRect(0, 0, c.width, c.height);
             g.drawImage(im, 0, 0, c.width, c.height);
             out = c.toDataURL("image/jpeg", quality);
@@ -262,7 +468,7 @@
     if (/^image\//.test(file.type) && file.size <= 25 * 1024 * 1024) {
       compressImage(file)
         .then(function (data) { sendChat("", data); })
-        .catch(function () { sendRawFile(file); });   // e.g. HEIC: send it as a plain file
+        .catch(function () { sendRawFile(file); });
     } else {
       sendRawFile(file);
     }
@@ -293,7 +499,10 @@
   });
   var msgsBox = $("msgs");
   ["dragenter", "dragover"].forEach(function (ev) {
-    msgsBox.addEventListener(ev, function (e) { e.preventDefault(); msgsBox.classList.add("drop"); });
+    msgsBox.addEventListener(ev, function (e) {
+      e.preventDefault();
+      msgsBox.classList.add("drop");
+    });
   });
   ["dragleave", "drop"].forEach(function (ev) {
     msgsBox.addEventListener(ev, function () { msgsBox.classList.remove("drop"); });
@@ -312,18 +521,44 @@
     if (e.key === "Enter") $("sendBtn").click();
   });
 
-  /* ----------------------------- whiteboard ---------------------------- */
+  $("msgInput").addEventListener("input", function () {
+    var now = Date.now();
+    if (!this.value || now - lastTypingSent < 2000) return;
+    lastTypingSent = now;
+    if (isHost) broadcast({ type: "typing", id: myId, name: name });
+    else send(hostConn, { type: "typing" });
+  });
+
   window.wbSend = function (m) {
     if (isHost) broadcast({ type: "wb", m: m });
     else send(hostConn, { type: "wb", m: m });
   };
 
+  window.laserSend = function (spot) {
+      if (!spot) return;
+
+      var message = {
+          type: "laser",
+          spot: {
+              x: spot.x,
+              y: spot.y
+          }
+      };
+
+      if (isHost) {
+          broadcast({
+              type: "laser",
+              id: myId,
+              spot: message.spot
+          });
+      } else {
+          send(hostConn, message);
+      }
+  };
+
   function sendBoardHistory(conn) {
     if (!window.Whiteboard) return;
-    var h = Whiteboard.getHistory();
-    for (var i = 0; i < h.length; i += 400) {
-      send(conn, { type: "wb", m: { t: "strokes", s: h.slice(i, i + 400) } });
-    }
+    Whiteboard.snapshot().forEach(function (m) { send(conn, { type: "wb", m: m }); });
   }
 
   /* ------------------- media: screen share and voice ------------------- */
@@ -341,6 +576,7 @@
   function startMediaTo(id) {
     if (screenStream) callPeer(id, "screen", screenStream);
     if (micStream) callPeer(id, "voice", micStream);
+    if (cameraStream) callPeer(id, "camera", cameraStream);
   }
 
   function stopCalls(kind) {
@@ -359,6 +595,7 @@
 
   function removeVoice(id) {
     var el = voiceEls[id];
+    if (window.Voices) Voices.detach(id);
     if (!el) return;
     el.srcObject = null;
     el.remove();
@@ -366,17 +603,20 @@
   }
 
   function handleMediaStop(d) {
-    if (d.kind === "screen") removeStream("s:" + d.from);
-    else if (d.kind === "voice") removeVoice(d.from);
+    if (d.kind === "voice") removeVoice(d.from);
+    else if (PREFIX[d.kind]) removeStream(PREFIX[d.kind] + d.from);
   }
 
   function cleanupPeer(id) {
-    ["screen", "voice"].forEach(function (kind) {
+    MEDIA_KINDS.forEach(function (kind) {
       var key = kind + ":" + id;
       if (outCalls[key]) { try { outCalls[key].close(); } catch (e) { } delete outCalls[key]; }
     });
     removeStream("s:" + id);
+    removeStream("c:" + id);
     removeVoice(id);
+    stopTyping(id);
+    if (window.Voices) Voices.forget(id);
   }
 
   function playVoice(id, stream) {
@@ -387,11 +627,13 @@
       el.style.display = "none";
       document.body.appendChild(el);
       voiceEls[id] = el;
+      if (window.Voices) Voices.attach(id, el);
     }
     el.srcObject = stream;
+    if (window.Speaking) Speaking.watch(id, stream);
     var p = el.play();
     if (p && p.catch) {
-      p.catch(function () {   // autoplay blocked: start on the next click/tap
+      p.catch(function () {
         var resume = function () { el.play().catch(function () { }); };
         document.addEventListener("click", resume, { once: true });
       });
@@ -400,15 +642,20 @@
 
   function onIncomingCall(call) {
     var kind = call.metadata && call.metadata.kind;
-    if (kind !== "screen" && kind !== "voice") { call.close(); return; }
-    call.answer();   // receive only
+    if (MEDIA_KINDS.indexOf(kind) < 0) { call.close(); return; }
+    function inRoom() { return users.some(function (u) { return u.id === call.peer; }); }
+    call.answer();
+    if (!inRoom()) {                                            
+      setTimeout(function () { if (inRoom()) onIncomingCall(call); else call.close(); }, 2000);
+      return;
+    }                                  // receive only
     call.on("stream", function (stream) {
-      if (kind === "screen") addStream("s:" + call.peer, stream);
-      else playVoice(call.peer, stream);
+      if (kind === "voice") playVoice(call.peer, stream);
+      else addStream(PREFIX[kind] + call.peer, stream);
     });
     call.on("close", function () {
-      if (kind === "screen") removeStream("s:" + call.peer);
-      else removeVoice(call.peer);
+      if (kind === "voice") removeVoice(call.peer);
+      else removeStream(PREFIX[kind] + call.peer);
     });
   }
 
@@ -417,7 +664,9 @@
     screenStream = stream;
     myStatus.screen = true;
     publishStatus();
-    users.forEach(function (u) { if (u.id && u.id !== myId) callPeer(u.id, "screen", stream); });
+    users.forEach(function (u) {
+      if (u.id && u.id !== myId) callPeer(u.id, "screen", stream);
+    });
   };
   window.onLocalStreamStop = function () {
     screenStream = null;
@@ -434,26 +683,38 @@
     micBtn.textContent = on ? "Mic on" : "Mic off";
   }
   function stopMic() {
-    if (micStream) { micStream.getTracks().forEach(function (t) { t.stop(); }); micStream = null; }
+    if (micStream) {
+      micStream.getTracks().forEach(function (t) { t.stop(); });
+      micStream = null;
+    }
     stopCalls("voice");
     announceMediaStop("voice");
     setMicUi(false);
     myStatus.mic = false;
     publishStatus();
+    if (window.Speaking) Speaking.stop(myId);
   }
   micBtn.addEventListener("click", function () {
     if (micStream) { stopMic(); return; }
+    var me = users.filter(function (u) { return u.id === myId; })[0];
+    if (me && me.hmute) { alert("The host has muted you."); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       alert("Microphone access needs HTTPS (or localhost) and a supported browser.");
       return;
     }
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false })
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: false
+    })
       .then(function (stream) {
         micStream = stream;
+        if (window.Speaking) Speaking.watch(myId, stream);
         setMicUi(true);
         myStatus.mic = true;
         publishStatus();
-        users.forEach(function (u) { if (u.id && u.id !== myId) callPeer(u.id, "voice", stream); });
+        users.forEach(function (u) {
+          if (u.id && u.id !== myId) callPeer(u.id, "voice", stream);
+        });
       })
       .catch(function (err) {
         alert("Could not access the microphone: " + (err && err.message || err));
@@ -468,39 +729,97 @@
     return out;
   }
 
-  function acceptGuest(conn, d) {
-    if (users.length >= MAX_USERS) {
-      send(conn, { type: "full" });
+  function announce(text) {                               // a system line for everybody, kept in the history
+    sysLocal(text);
+    remember({ type: "sys", text: text });
+    broadcast({ type: "sys", text: text });
+  }
+
+  function tooManyFails() {                                      // across the whole room: ids are free, so can't ban by id
+    var cut = Date.now() - 60000;
+    failTimes = failTimes.filter(function (t) { return t > cut; });
+    return failTimes.length >= 10;
+  }
+
+  function challenge(conn, d) {
+    conn.pending = d;                                            // keep the hello until the password is proven
+    conn.fails = 0;
+    send(conn, { type: "need-password", salt: pwRecord.salt });
+    conn.authTimer = setTimeout(function () {                    // don't let silent connections pile up
+      if (!conn.joined) {
+        send(conn, { type: "auth-fail", final: true, reason: "Timed out." });
+        setTimeout(function () { conn.close(); }, 300);
+      }
+    }, 60000);
+  }
+
+  function checkAuth(conn, d) {
+    if (tooManyFails()) {
+      send(conn, { type: "auth-fail", final: true, reason: "Too many wrong attempts. Try again in a minute." });
       setTimeout(function () { conn.close(); }, 300);
       return;
     }
+    if (sameString(d.proof, pwRecord.proof)) {
+      clearTimeout(conn.authTimer);
+      var hello = conn.pending;
+      conn.pending = null;
+      acceptGuest(conn, hello, true);
+      return;
+    }
+    failTimes.push(Date.now());
+    conn.fails++;
+    if (conn.fails >= 5) {
+      send(conn, { type: "auth-fail", final: true, reason: "Wrong password." });
+      setTimeout(function () { conn.close(); }, 300);
+    } else {
+      send(conn, { type: "auth-fail", left: 5 - conn.fails });
+    }
+  }
+
+  function acceptGuest(conn, d, authed) {
+    var existing = users.filter(function (u) { return u.id === conn.peer; })[0];
+
+    if (!existing) {
+      if (locked) { send(conn, { type: "room-locked" }); setTimeout(function () { conn.close(); }, 300); return; }
+      if (users.length >= MAX_USERS) { send(conn, { type: "full" }); setTimeout(function () { conn.close(); }, 300); return; }
+      if (pwRecord && !authed) { challenge(conn, d); return; }
+    }
+
     conn.joined = true;
-    conn.userName = uniqueName(cleanName(d.name));
-    var snapshot = history.slice();
-
+    conn.userName = existing ? existing.name : uniqueName(cleanName(d.name));
     conns.push(conn);
-    users.push({ id: conn.peer, name: conn.userName });
+    if (!existing) users.push({ id: conn.peer, name: conn.userName });
 
-    send(conn, { type: "welcome", users: users, history: snapshot });
-    sendBoardHistory(conn);
+    send(conn, {
+      type: "welcome", users: users, locked: locked, reacts: reacts, notes: sharedNotesText, mediaState: syncedMediaState,
+      pwSalt: pwRecord ? pwRecord.salt : null,
+      history: d.rejoin ? [] : history.slice()
+    });
+    if (!d.rejoin) sendBoardHistory(conn);                // a returning member already has the board
 
-    var note = { type: "sys", text: conn.userName + " joined" };
-    sysLocal(note.text);
-    remember(note);
-    broadcast(note);
+    if (!existing) announce(conn.userName + " joined");
     broadcast({ type: "roster", users: users }, conn);
     renderUsers();
     startMediaTo(conn.peer);
   }
-
+  function setLockUi(on) {                              // runs on everyone
+    if ($("lockTag")) $("lockTag").hidden = !on;
+    var b = $("lockBtn");
+    if (b) {
+      b.hidden = !isHost;                               // only the host sees the button
+      b.textContent = on ? "🔒 Unlock room" : "🔓 Lock room";
+      b.setAttribute("aria-pressed", on);
+    }
+  }
   function dropGuest(conn) {
+    if (!isHost) return;
     var i = conns.indexOf(conn);
     if (i < 0) return;
     conns.splice(i, 1);
     users = users.filter(function (u) { return u.id !== conn.peer; });
     cleanupPeer(conn.peer);
 
-    var note = { type: "sys", text: conn.userName + " left" };
+    var note = { type: "sys", text: conn.userName + (conn.kicked ? " was removed by the host" : " left") };
     sysLocal(note.text);
     remember(note);
     broadcast(note);
@@ -510,16 +829,29 @@
 
   function onHostData(conn, d) {
     if (!d || typeof d !== "object") return;
-    if (d.type === "hello") { if (!conn.joined) acceptGuest(conn, d); return; }
+    if (d.type === "hello") {
+      if (!conn.joined) acceptGuest(conn, d, false);
+      return;
+    }
+    if (d.type === "auth") { if (!conn.joined && conn.pending) checkAuth(conn, d); return; }
     if (!conn.joined) return;
-
     if (d.type === "chat") {
       var text = clip(d.text, MAX_TEXT).trim();
       var img = cleanImg(d.img);
       var file = cleanFile(d.file);
+      var mid = cleanMid(d.mid);
+      if (!mid || msgIndex[mid]) return;
       if (!text && !img && !file) return;
-      var m = { type: "chat", id: conn.peer, name: conn.userName, text: text, img: img, file: file };
-      addMessage(m.name, m.text, false, false, img, file);
+
+      stopTyping(conn.peer);
+      var src = cleanMid(d.reply) && msgIndex[d.reply];
+      var reply = src ? { mid: d.reply, name: src.name, text: src.text } : null;
+      var m = {
+        type: "chat", id: conn.peer, name: conn.userName,
+        text: text, img: img, file: file, mid: mid, reply: reply
+      };
+      addMessage(m.name, m.text, false, false, img, file, { mid: mid, reply: reply });
+      indexMsg(mid, m.name, snippet(text, img, file));
       rememberChat(m);
       broadcast(m, conn);
     } else if (d.type === "status") {
@@ -527,43 +859,253 @@
       if (u) {
         u.mic = !!d.mic;
         u.screen = !!d.screen;
+        u.cam = !!d.cam;
         renderUsers();
         broadcast({ type: "roster", users: users });
       }
     } else if (d.type === "wb") {
-      if (window.Whiteboard) Whiteboard.applyRemote(d.m);
-      broadcast({ type: "wb", m: d.m }, conn);
-    } else if (d.type === "media-stop" && (d.kind === "screen" || d.kind === "voice")) {
+      var wbMsg = window.Whiteboard && Whiteboard.applyRemote(d.m);   // a cleaned copy, or null if it was invalid
+      if (wbMsg) broadcast({ type: "wb", m: wbMsg }, conn);
+    } else if (d.type === "notes-update") {
+      if (typeof d.text !== "string") return;
+
+      sharedNotesText = d.text.slice(0, 100000);
+
+      // Update the host's own notes box.
+      var notesBox = $("sharedNotes");
+      if (notesBox) {
+        notesBox.value = sharedNotesText;
+      }
+
+      // Send the update to everyone except the guest who sent it.
+      broadcast({
+        type: "notes-update",
+        text: sharedNotesText
+      }, conn);
+    }else if (d.type === "poll-create") {
+        var request = d.poll;
+
+        if (
+          !request ||
+          typeof request.question !== "string" ||
+          !Array.isArray(request.options)
+        ) {
+          return;
+        }
+
+        var question = request.question.trim().slice(0, 200);
+        var options = request.options
+          .filter(function (option) {
+            return typeof option === "string";
+          })
+          .map(function (option) {
+            return option.trim().slice(0, 100);
+          })
+          .filter(Boolean);
+
+        if (!question || options.length < 2 || options.length > 10) {
+          return;
+        }
+
+        var poll = {
+          id: "poll-" + Date.now() + "-" +
+            Math.random().toString(36).slice(2, 8),
+          creatorId: conn.peer,
+          name: conn.userName || "Guest",
+          question: question,
+          options: options,
+          counts: options.map(function () { return 0; }),
+          votes: {},
+          closed: false
+        };
+
+        polls[poll.id] = poll;
+
+        addPollMessage(poll, false);
+        remember({ type: "poll", poll: poll });
+        broadcast({ type: "poll-create", poll: poll });
+      }else if (d.type === "laser") {
+      var spot = d.spot;
+
+      if (
+          !spot ||
+          !Number.isFinite(spot.x) ||
+          !Number.isFinite(spot.y) ||
+          spot.x < 0 || spot.x > 1 ||
+          spot.y < 0 || spot.y > 1
+      ) {
+          return;
+      }
+
+      console.log("[laser] host received pointer from:", conn.peer, d.spot);
+
+      if (window.laserReceive) {
+          window.laserReceive(conn.peer, spot);
+      }
+
+      broadcast({
+          type: "laser",
+          id: conn.peer,
+          spot: {
+              x: spot.x,
+              y: spot.y
+          }
+      }, conn);
+    } else if (d.type === "media-stop" && MEDIA_KINDS.indexOf(d.kind) >= 0) {
       var s = { type: "media-stop", kind: d.kind, from: conn.peer };
       handleMediaStop(s);
       broadcast(s, conn);
+    } else if (d.type === "media-sync") {
+      var incoming = d.state;
+      if (!incoming || typeof incoming !== "object") return;
+      var action = incoming.action;
+      if (["load", "play", "pause", "seek", "clear"].indexOf(action) < 0) return;
+      var cleanState = { action: action, at: Date.now() };
+      if (action === "load") {
+        if (typeof incoming.url !== "string" || incoming.url.length > 2000) return;
+        try {
+          var mediaUrl = new URL(incoming.url);
+          if (!["https:", "http:"].includes(mediaUrl.protocol) || mediaUrl.username || mediaUrl.password) return;
+          cleanState.url = mediaUrl.href;
+        } catch (e) { return; }
+      } else if (action === "play" || action === "pause" || action === "seek") {
+        if (!Number.isFinite(incoming.time) || incoming.time < 0 || incoming.time > 86400) return;
+        cleanState.time = incoming.time;
+        if (syncedMediaState && typeof syncedMediaState.url === "string") cleanState.url = syncedMediaState.url;
+      }
+      syncedMediaState = cleanState;
+      if (window.applySyncedMedia) window.applySyncedMedia(cleanState, true);
+      broadcast({ type: "media-sync", state: cleanState });
+    } else if (d.type === "typing") {
+      var t = { type: "typing", id: conn.peer, name: conn.userName };
+      someoneTyping(t.id, t.name);
+      broadcast(t, conn);
+    } else if (d.type === "react") {
+      applyReaction(cleanMid(d.mid), conn.peer, d.emoji);
+    }else if (d.type === "poll-vote") {
+      var poll = polls[d.pollId];
+
+      if (
+        !poll ||
+        poll.closed ||
+        !Number.isInteger(d.optionIndex) ||
+        d.optionIndex < 0 ||
+        d.optionIndex >= poll.options.length
+      ) {
+        return;
+      }
+
+      poll.votes = poll.votes || {};
+
+      // Each connected participant gets one vote per poll.
+      if (
+        Object.prototype.hasOwnProperty.call(
+          poll.votes,
+          conn.peer
+        )
+      ) {
+        return;
+      }
+
+      // Use the sender's connection ID, not an ID supplied by them.
+      poll.votes[conn.peer] = d.optionIndex;
+
+      recountPoll(poll);
+
+      if (typeof window.refreshPollMessage === "function") {
+        window.refreshPollMessage(poll);
+      }
+
+      remember({ type: "poll", poll: poll });
+
+      broadcast({
+        type: "poll-update",
+        poll: poll
+      });
     }
   }
 
+  function acceptConnection(conn) {                       // same logic as before, now on the hub
+    conn.on("data", function (d) { onHostData(conn, d); });
+    conn.on("close", function () { dropGuest(conn); });
+    conn.on("error", function () { dropGuest(conn); });
+  }
+
+  // Try to take the room address. Used when creating a room AND when taking over one.
+  function openHub(onOpen, onTaken) {
+    var h = new Peer(ROOM_PREFIX + code, PEER_OPTS);
+    h.on("open", function () { hub = h; onOpen(); });
+    h.on("connection", acceptConnection);
+    h.on("error", function (err) {
+      if (err.type === "unavailable-id") { try { h.destroy(); } catch (e) { } onTaken(); }
+      else if (err.type !== "peer-unavailable") sysLocal("Connection problem: " + err.type);
+    });
+    h.on("disconnected", function () {                    // keep the address alive on the server
+      setTimeout(function () { if (!h.destroyed && h.disconnected) h.reconnect(); }, 1500);
+    });
+  }
+
   function initHost() {
-    peer = new Peer(ROOM_PREFIX + code, PEER_OPTS);
+    peer = new Peer(undefined, PEER_OPTS);                // my identity: random id
 
     peer.on("open", function (id) {
       myId = id;
-      users = [{ id: id, name: name }];
+      users = [{ id: id, name: name, host: true }];
       renderUsers();
-      sysLocal("Room " + code + " is open. Share the code to invite friends.");
-    });
-
-    peer.on("connection", function (conn) {
-      conn.on("data", function (d) { onHostData(conn, d); });
-      conn.on("close", function () { dropGuest(conn); });
-      conn.on("error", function () { dropGuest(conn); });
+      setupPassword().then(function () {
+        openHub(
+          function () { sysLocal("Room " + code + " is open. Share the code to invite friends."); },
+          function () { alert("That room code is already in use. Go back and create a new room."); goHome(); }
+        );
+      }, function (msg) {
+        alert(typeof msg === "string" ? msg : "Could not set the room password.");
+        goHome();
+      });
     });
 
     peer.on("error", function (err) {
-      if (err.type === "unavailable-id") {
-        alert("That room code is already in use. Go back and create a new room.");
-        goHome();
-      } else if (err.type !== "peer-unavailable") {
-        sysLocal("Connection problem: " + err.type);
-      }
+      if (err.type !== "peer-unavailable") sysLocal("Connection problem: " + err.type);
     });
+  }
+
+  function userNameOf(id) {
+    var u = users.filter(function (x) { return x.id === id; })[0];
+    return u ? u.name : "someone";
+  }
+
+  // Who should take over, in order. Same answer on every client, because the roster is the same.
+  function successionOrder() {
+    var lost = users.filter(function (u) { return u.host; })[0];
+    var ids = users.filter(function (u) { return !u.host; }).map(function (u) { return u.id; });
+    if (nextHost && ids.indexOf(nextHost) >= 0) {         // a handover chose someone: they go first
+      ids = [nextHost].concat(ids.filter(function (i) { return i !== nextHost; }));
+    }
+    if (lost) ids.push(lost.id);                          // a host that stepped down may still claim, last
+    return ids;
+  }
+
+  function hostLost(msg) {
+    if (leaving || isHost || recovering) return;
+    recovering = true;
+    giveUpAt = Date.now() + 120000;
+    sysLocal(msg || (nextHost ? "Switching to the new host…" : "The host is gone. Choosing a new host…"));
+
+    var rank = Math.max(0, successionOrder().indexOf(myId));
+    setTimeout(claimLoop, 1500 + rank * 4000);            // first in line goes first
+    if (hostConn) hostConn.failed = true;                 // that connection is dead: replace it at once
+    rejoinLoop();
+  }
+
+  function rejoinLoop() {                                 // try to reach whoever holds the address
+    if (!recovering || leaving) return;
+    if (Date.now() > giveUpAt) { alert("Lost the connection to the room."); goHome(); return; }
+    if (!hostConn || hostConn.failed || (!hostConn.open && Date.now() - hostConn.startedAt > 6000)) connectToHost();
+    setTimeout(rejoinLoop, 2000);
+  }
+
+  function claimLoop() {                                  // try to become the holder of the address
+    if (!recovering || isHost || leaving || Date.now() > giveUpAt) return;
+    openHub(becomeHost, function () { setTimeout(claimLoop, 5000); });   // taken (or still reserved): try again
   }
 
   /* ------------------------------- GUEST ------------------------------- */
@@ -571,25 +1113,96 @@
     if (!d || typeof d !== "object") return;
     switch (d.type) {
       case "welcome":
+        $("pwDialog").hidden = true;
+        if (d.pwSalt) { pwSalt = d.pwSalt; if (pendingProof) pwProof = pendingProof; }
+        pendingProof = null;
+        setPwUi(!!d.pwSalt);
         joined = true;
+        recovering = false;
+        locked = !!d.locked;
+        setLockUi(locked);
         setUsers(d.users);
-        (Array.isArray(d.history) ? d.history : []).forEach(function (e) {
-          if (e.type === "sys") sysLocal(clip(e.text, MAX_TEXT));
-          else if (e.type === "chat") addMessage(clip(e.name, 20), clip(e.text, MAX_TEXT), false, false, cleanImg(e.img));
-        });
+        if (!welcomed) {                                  // first welcome: show the replayed chat
+          history = Array.isArray(d.history) ? d.history.slice() : [];
+          replaying = true;                               // old messages are not "unread"
+          history.forEach(function (e) {
+            if (e.type === "sys") sysLocal(clip(e.text, MAX_TEXT));
+            else if (e.type === "chat") addMessage(
+              clip(e.name, 20), clip(e.text, MAX_TEXT), false, false,
+              cleanImg(e.img), null, { mid: cleanMid(e.mid), reply: cleanReply(e.reply) }
+            );
+            else if (e.type === "poll" && e.poll) {
+              var poll = e.poll;
+
+              if (typeof poll.id !== "string") {
+                return;
+              }
+
+              var alreadyDisplayed = Array.from(
+                document.querySelectorAll(".poll-message")
+              ).some(function (element) {
+                return element.dataset.pollId === poll.id;
+              });
+
+              polls[poll.id] = poll;
+
+              if (alreadyDisplayed) {
+                if (typeof window.refreshPollMessage === "function") {
+                  window.refreshPollMessage(poll);
+                }
+              } else {
+                addPollMessage(poll, poll.creatorId === myId);
+              }
+            }
+          });
+          replaying = false;
+        }
+        reacts = d.reacts || {};
+        if (!welcomed) Object.keys(reacts).forEach(function (mid) { renderReacts(mid, reacts[mid]); });
+        var wasBack = welcomed;
+        welcomed = true;
+        if (wasBack) publishStatus();      
+        var notesBox = $("sharedNotes");
+        if (notesBox && typeof d.notes === "string") {
+          notesBox.value = d.notes;
+        }
+        if (d.mediaState && window.applySyncedMedia) window.applySyncedMedia(d.mediaState, false);
+        break;
+      case "media-sync":
+        if (d.state && window.applySyncedMedia) window.applySyncedMedia(d.state, false);
         break;
       case "roster":
         setUsers(d.users);
         break;
-      case "chat":
-        addMessage(clip(d.name, 20), clip(d.text, MAX_TEXT), false, false, cleanImg(d.img), cleanFile(d.file));
+      case "chat": {
+        stopTyping(String(d.id));
+        var cm = {
+          id: String(d.id), name: clip(d.name, 20), text: clip(d.text, MAX_TEXT),
+          img: cleanImg(d.img), file: cleanFile(d.file),
+          mid: cleanMid(d.mid), reply: cleanReply(d.reply)
+        };            // reactions
+        addMessage(cm.name, cm.text, false, false, cm.img, cm.file, { mid: cm.mid, reply: cm.reply });
+        rememberChat(cm);
         break;
-      case "sys":
-        sysLocal(clip(d.text, MAX_TEXT));
+      }
+      case "sys": {
+        var t = clip(d.text, MAX_TEXT);
+        sysLocal(t);
+        remember({ type: "sys", text: t });
+        break;
+      }
+      case "reacts":                                          // reactions
+        renderReacts(d.mid, d.reacts);
+        if (cleanMid(d.mid)) reacts[d.mid] = d.reacts || {};
         break;
       case "wb":
         if (window.Whiteboard) Whiteboard.applyRemote(d.m);
         break;
+      case "laser":
+        if(window.laserReceive){
+          window.laserReceive(d.id,d.spot);
+        }
+        return;
       case "media-stop":
         if (typeof d.from === "string") handleMediaStop(d);
         break;
@@ -597,7 +1210,106 @@
         alert("This room is full.");
         goHome();
         break;
+      case "typing":
+        someoneTyping(String(d.id), clip(d.name, 20));
+        break;
+      case "kicked":
+        alert("The host removed you from the room.");
+        goHome();                                           // sets leaving = true, so the close that follows is ignored
+        break;
+      case "force-mute":
+        if (micStream) stopMic();
+        sysLocal("The host muted your microphone.");
+        break;
+      case "lock":
+        locked = !!d.locked;
+        setLockUi(locked);
+        sysLocal(locked ? "The host locked the room." : "The host unlocked the room.");
+        break;
+      case "room-locked":                                   // turned away at the door
+        alert("This room is locked by the host.");
+        goHome();
+        break;
+      case "handover":
+        if (typeof d.to === "string") {
+          nextHost = d.to;
+          sysLocal(d.to === myId ? "The host is passing the room to you."
+            : "The host is passing the room to " + userNameOf(d.to) + ".");
+        }
+        break;
+      case "need-password":
+        clearTimeout(joinTimer);                                      // the host answered; the user may take a while to type
+        askSalt = d.salt;
+        if (pwProof && pwSalt === d.salt) {                           // a returning member already knows it
+          send(hostConn, { type: "auth", proof: pwProof });
+        } else {
+          askPassword(0);
+        }
+        break;
+      case "auth-fail":
+        if (d.final) { alert(d.reason || "Wrong password."); goHome(); }
+        else askPassword(d.left);
+        break;
+      case "notes-update": {
+        var notesBox = $("sharedNotes");
+
+        if (notesBox && typeof d.text === "string") {
+          notesBox.value = d.text.slice(0, 100000);
+
+          var status = $("notesStatus");
+          if (status) status.textContent = "Notes synchronized";
+        }
+        break;
+      }
+      case "poll-create": {
+        var poll = d.poll;
+
+        if (
+          !poll ||
+          typeof poll.id !== "string" ||
+          typeof poll.question !== "string" ||
+          !Array.isArray(poll.options) ||
+          poll.options.length < 2
+        ) {
+          break;
+        }
+
+        if (polls[poll.id]) {
+          break;
+        }
+
+        polls[poll.id] = poll;
+        addPollMessage(poll, poll.creatorId === myId);
+        break;
+      }
+      case "poll-update": {
+        var updatedPoll = d.poll;
+        if (
+          !updatedPoll ||
+          typeof updatedPoll.id !== "string" ||
+          typeof updatedPoll.question !== "string" ||
+          !Array.isArray(updatedPoll.options) ||
+          !Array.isArray(updatedPoll.counts) ||
+          !updatedPoll.votes ||
+          typeof updatedPoll.votes !== "object"
+        ) {
+          break;
+        }
+        polls[updatedPoll.id] = updatedPoll;
+        refreshPollMessage(updatedPoll);
+        break;
+      }
     }
+  }
+
+  function connectToHost() {
+    var c = peer.connect(ROOM_PREFIX + code, { reliable: true });
+    c.startedAt = Date.now();
+    hostConn = c;
+    c.on("open", function () { send(c, { type: "hello", name: name, rejoin: welcomed }); });
+    c.on("data", function (d) { if (c === hostConn) onGuestData(d); });
+    c.on("close", function () { if (c === hostConn && !leaving) hostLost(); });   // ignore abandoned attempts
+    c.on("error", function () { /* "close" follows */ });
   }
 
   function initGuest() {
@@ -610,36 +1322,362 @@
       renderUsers();
       sysLocal("Connecting to room " + code + "...");
 
-      hostConn = peer.connect(ROOM_PREFIX + code, { reliable: true });
-      timer = setTimeout(function () {
+      connectToHost();
+      joinTimer = setTimeout(function () {
         if (!joined && !leaving) {
           alert("Could not connect to the room. Check the code and try again.");
           goHome();
         }
       }, CONNECT_TIMEOUT);
-
-      hostConn.on("open", function () { send(hostConn, { type: "hello", name: name }); });
-      hostConn.on("data", onGuestData);
-      hostConn.on("close", function () {
-        clearTimeout(timer);
-        if (leaving) return;
-        goHome("The host left. This room is closed.", 3000);
-      }); 
     });
 
     peer.on("error", function (err) {
       if (err.type === "peer-unavailable") {
-        if (!joined && !leaving) {   // before joining = the room does not exist
+        if (!joined && !leaving) {                        // before joining = the room does not exist
           clearTimeout(timer);
           alert("Room not found. Check the code and try again.");
           goHome();
-        }                            // after joining = a guest we tried to call is gone
+        }                                                 // after joining = a peer we tried to call is gone
       } else {
         sysLocal("Connection problem: " + err.type);
       }
     });
   }
- 
+
+  /* ----------------------- typing indicator + unread ----------------------- */
+  var typers = {};
+  var lastTypingSent = 0;
+  var unread = 0, baseTitle = document.title;
+
+  function typingEl() {
+    var el = $("typing");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "typing";
+      el.className = "typing";
+      var c = document.querySelector(".compose");
+      c.parentNode.insertBefore(el, c);
+    }
+    return el;
+  }
+
+  function renderTyping() {
+    var names = Object.keys(typers).map(function (id) {
+      return typers[id].name;
+    });
+    var t = "";
+    if (names.length === 1) t = names[0] + " is typing\u2026";
+    else if (names.length === 2) t = names[0] + " and " + names[1] + " are typing\u2026";
+    else if (names.length > 2) t = "Several people are typing\u2026";
+    typingEl().textContent = t;
+  }
+
+  function someoneTyping(id, nm) {
+    if (id === myId) return;
+    if (typers[id]) clearTimeout(typers[id].timer);
+    typers[id] = {
+      name: nm,
+      timer: setTimeout(function () { stopTyping(id); }, 3000)
+    };
+    renderTyping();
+  }
+
+  function stopTyping(id) {
+    if (!typers[id]) return;
+    clearTimeout(typers[id].timer);
+    delete typers[id];
+    renderTyping();
+  }
+
+  // the chat counts as "seen" only when its tab is open AND the browser tab is in front
+  function chatVisible() {
+    return !document.hidden && !$("v-chat").hidden;
+  }
+
+  function badgeEl() {
+    var b = $("chatBadge");
+    if (!b) {
+      b = document.createElement("span");
+      b.id = "chatBadge";
+      b.className = "unread";
+      b.hidden = true;
+      var btn = document.querySelector('nav [data-view="chat"]');
+      if (btn) btn.appendChild(b);
+    }
+    return b;
+  }
+
+  function renderUnread() {
+    var b = badgeEl();
+    b.textContent = unread;
+    b.hidden = !unread;
+    document.title = (unread ? "(" + unread + ") " : "") + baseTitle;
+  }
+  function clearUnread() {
+    unread = 0;
+    renderUnread();
+  }
+
+  // no hook in room.js needed: watch the chat panel being shown / hidden
+  new MutationObserver(function () {
+    if (chatVisible()) clearUnread();
+  }).observe($("v-chat"), {
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (chatVisible()) clearUnread();
+  });
+  typingEl();
+  badgeEl();
+
+  // create emojis
+  var REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
+  var MID_RE = /^[a-z0-9]{8,24}$/;
+
+  var seen = {};       // every peer: mid -> { name, text } (messages it has shown)
+  var msgIndex = {};   // host only: mid -> { name, text } (what a reply may quote)
+  var msgOrder = [];   // host only: mids in order, so the index can be capped
+  var reacts = {};     // host only: mid -> { "👍": [peerId, ...] }
+  var replyingTo = null;
+
+  function newMid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function cleanMid(v) {
+    return (typeof v === "string" && MID_RE.test(v)) ? v : null;
+  }
+
+  function cleanReply(r) {
+    if (!r || typeof r !== "object") return null;
+    return {
+      mid: cleanMid(r.mid),
+      name: clip(r.name, 20),
+      text: clip(r.text, 80)
+    };
+  }
+
+  function indexMsg(mid, nm, text) { // host: remember a message, capped at 500
+    msgIndex[mid] = { name: nm, text: text };
+    msgOrder.push(mid);
+    if (msgOrder.length > 500) {
+      var old = msgOrder.shift();
+      delete msgIndex[old];
+      delete reacts[old];
+    }
+  }
+
+  function quoteEl(r) {
+    var q = document.createElement("div");
+    q.className = "quote";
+
+    var b = document.createElement("b");
+    b.textContent = r.name;
+    q.appendChild(b);
+    q.appendChild(document.createTextNode(" " + r.text));
+
+    q.onclick = function () {
+      if (!r.mid) return;
+      var t = document.querySelector('[data-mid="' + r.mid + '"]');
+      if (!t) return;
+      t.scrollIntoView({ block: "center", behavior: "smooth" });
+      t.classList.add("flash");
+      setTimeout(function () {
+        t.classList.remove("flash");
+      }, 1200);
+    };
+
+    return q;
+  }
+
+  function actionsEl(mid) {
+    var bar = document.createElement("div");
+    bar.className = "acts";
+
+    REACTIONS.forEach(function (e) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = e;
+      b.setAttribute("aria-label", "React " + e);
+      b.onclick = function () { react(mid, e); };
+      bar.appendChild(b);
+    });
+
+    var r = document.createElement("button");
+    r.type = "button";
+    r.textContent = "↩ Reply";
+    r.onclick = function () { startReply(mid); };
+    bar.appendChild(r);
+
+    return bar;
+  }
+
+  function renderReacts(mid, map) {
+    mid = cleanMid(mid);
+    var msg = mid && document.querySelector('[data-mid="' + mid + '"]');
+    if (!msg) return;
+
+    var row = msg.querySelector(".reacts");
+    row.innerHTML = "";
+
+    REACTIONS.forEach(function (e) {
+      var ids = (map && Array.isArray(map[e])) ? map[e] : [];
+      if (!ids.length) return;
+
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip" + (ids.indexOf(myId) >= 0 ? " mine" : "");
+      chip.textContent = e + " " + ids.length;
+      chip.title = ids.map(function (id) {
+        var u = users.filter(function (x) { return x.id === id; })[0];
+        return u ? u.name : "someone";
+      }).join(", ");
+
+      chip.onclick = function () { react(mid, e); };
+      row.appendChild(chip);
+    });
+  }
+
+  function react(mid, emoji) {
+    // Clicking the same emoji again removes it.
+    if (isHost) applyReaction(mid, myId, emoji);
+    else send(hostConn, { type: "react", mid: mid, emoji: emoji });
+  }
+
+  function startReply(mid) {
+    var s = seen[mid];
+    if (!s) return;
+
+    replyingTo = mid;
+    $("replyText").textContent = "Replying to " + s.name + ": " + s.text;
+    $("replyBar").hidden = false;
+    $("msgInput").focus();
+  }
+
+  function cancelReply() {
+    replyingTo = null;
+    $("replyBar").hidden = true;
+  }
+
+  $("replyCancel").addEventListener("click", cancelReply);
+
+  $("msgInput").addEventListener("keydown", function (e) {
+    if (e.key === "Escape") cancelReply();
+  });
+
+  function applyReaction(mid, userId, emoji) {
+    if (!mid || !msgIndex[mid] || REACTIONS.indexOf(emoji) < 0) return;
+
+    var r = reacts[mid] = reacts[mid] || {};
+    var arr = r[emoji] = r[emoji] || [];
+    var i = arr.indexOf(userId);
+
+    if (i < 0) arr.push(userId);
+    else arr.splice(i, 1);
+
+    if (!arr.length) delete r[emoji];
+
+    renderReacts(mid, r);
+    broadcast({ type: "reacts", mid: mid, reacts: r });
+
+  }
+
+  function kick(id) {                                   // host only
+    var conn = connOf(id);
+    if (!conn) return;
+    conn.kicked = true;                                 // so the "left" message says why
+    send(conn, { type: "kicked" });
+    setTimeout(function () { conn.close(); }, 300);
+  }
+
+  function hostMute(id, on) {                           // host only
+    var u = users.filter(function (x) { return x.id === id; })[0];
+    if (!u) return;
+    u.hmute = on;
+    if (on) send(connOf(id), { type: "force-mute" });   // asks their client to stop the mic
+    if (window.Voices) Voices.hostMute(id, on);         // the host stops hearing them too
+    renderUsers();
+    broadcast({ type: "roster", users: users });
+  }
+  $("lockBtn").addEventListener("click", function () {
+    if (!isHost) return;
+    locked = !locked;
+    broadcast({ type: "lock", locked: locked });
+    setLockUi(locked);
+    sysLocal(locked ? "You locked the room." : "You unlocked the room.");
+  });
+  setLockUi(false);
+
+  function becomeHost() {
+    if (isHost) return;
+    isHost = true;
+    joined = true;
+    recovering = false;
+    nextHost = null;
+    pwRecord = pwProof ? { salt: pwSalt, proof: pwProof } : null;
+
+    if (hostConn) { var old = hostConn; hostConn = null; try { old.close(); } catch (e) { } }
+    conns = [];
+    users.forEach(function (u) { u.host = (u.id === myId); });   // the roster is inherited, only the badge moves
+
+    msgIndex = {}; msgOrder = [];                         // reactions: rebuild what replies can quote
+    history.forEach(function (e) { if (e.mid) indexMsg(e.mid, e.name, snippet(e.text, e.img, null)); });
+
+    setLockUi(locked);                                    // shows the Lock button, host tools appear on re-render
+    renderUsers();
+    sysLocal("You are now the host.");
+    setTimeout(pruneAbsent, GRACE);
+  }
+
+  // After the grace period, anyone from the old roster who never reconnected is gone.
+  function pruneAbsent() {
+    if (!isHost) return;
+    var gone = users.filter(function (u) { return u.id !== myId && !connOf(u.id); });
+    gone.forEach(function (u) { cleanupPeer(u.id); });
+    users = users.filter(function (u) { return gone.indexOf(u) < 0; });
+    gone.forEach(function (u) { announce(u.name + " left"); });
+    renderUsers();
+    broadcast({ type: "roster", users: users });
+    announce(name + " is now the host.");
+  }
+
+  function handOver(toId) {                               // host only
+    if (!connOf(toId)) return;
+    broadcast({ type: "handover", to: toId });            // everyone learns who is next
+    nextHost = toId;
+    setTimeout(stepDown, 600);                            // let that message leave first
+  }
+
+  function stepDown() {
+    if (!isHost) return;
+    isHost = false;                                       // dropGuest() now ignores the closes below
+    welcomed = true;                                      // I already have the chat and board: no replay on rejoin
+    var h = hub; hub = null;
+    conns = [];
+    try { h.destroy(); } catch (e) { }                    // frees the address, closes every guest connection
+    setLockUi(locked);                                    // hides the host-only button
+    renderUsers();
+    hostLost("You handed over the room. Reconnecting…");  // from here on we are a regular member
+  }
+
+  window.hostAction = function (kind, id, arg) {
+    if (!isHost) return;
+    if (kind === "kick") kick(id);
+    else if (kind === "mute") hostMute(id, arg);
+    else if (kind === "handover") handOver(id);
+  };
+
+  window.addEventListener("pagehide", function () {
+    leaving = true;
+    if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+    if (cameraStream) cameraStream.getTracks().forEach(function (t) { t.stop(); });
+    if (hub && !hub.destroyed) hub.destroy();             // release the room address first
+    if (peer && !peer.destroyed) peer.destroy();
+  });
+
+  /* -------------------------------- start ------------------------------ */
   renderUsers();
 
   if (typeof Peer === "undefined") {
@@ -647,18 +1685,231 @@
     return;
   }
 
-  if (isHost) initHost(); else initGuest();
+  if (isHost) initHost();
+  else initGuest();
 
   peer.on("call", onIncomingCall);
- 
-  peer.on("disconnected", function () {
-    if (leaving) return;
-    setTimeout(function () { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 1500);
+
+  // recovery: "nobody holds the room address yet" -> mark the attempt failed so the loop retries at once
+  peer.on("error", function (err) {
+    if (err.type !== "peer-unavailable" || !recovering || !hostConn) return;
+    var msg = String(err.message || "");
+    var aboutSomeoneElse = users.some(function (u) { return u.id !== myId && msg.indexOf(u.id) >= 0; });
+    if (!aboutSomeoneElse) hostConn.failed = true;   // (a failed media call to a departed member is ignored)
   });
 
-  window.addEventListener("pagehide", function () {
-    leaving = true;
-    if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
-    if (peer && !peer.destroyed) peer.destroy();
+  peer.on("disconnected", function () {
+    if (leaving) return;
+    setTimeout(function () {
+      if (peer && !peer.destroyed && peer.disconnected) peer.reconnect();
+    }, 1500);
   });
+
+  var PBKDF2_ITER = 200000;   // slow on purpose: makes guessing a weak password expensive
+
+  function toB64(buf) {
+    var s = "";
+    new Uint8Array(buf).forEach(function (b) { s += String.fromCharCode(b); });
+    return btoa(s);
+  }
+
+  function newSalt() { return toB64(crypto.getRandomValues(new Uint8Array(16))); }
+
+  function deriveProof(password, salt) {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"])
+      .then(function (key) {
+        return crypto.subtle.deriveBits(
+          { name: "PBKDF2", hash: "SHA-256", salt: enc.encode(salt + "|auth"), iterations: PBKDF2_ITER },
+          key, 256);
+      })
+      .then(toB64);
+  }
+
+  function sameString(a, b) {                       // compare without stopping at the first difference
+    if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+    var r = 0;
+    for (var i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return r === 0;
+  }
+  var pendingProof = null, askSalt = null, joinTimer = null;
+
+  function askPassword(triesLeft) {
+    $("pwErr").textContent = triesLeft ? "Wrong password. " + triesLeft + " tries left." : "";
+    $("pwInput").value = "";
+    $("pwDialog").hidden = false;
+    $("pwInput").focus();
+  }
+
+  $("pwForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var pass = $("pwInput").value;
+    if (!pass) return;
+    $("pwErr").textContent = "Checking…";
+    deriveProof(pass, askSalt).then(function (proof) {
+      pendingProof = proof;                                       // kept only if the host accepts it
+      send(hostConn, { type: "auth", proof: proof });
+    }, function () {
+      $("pwErr").textContent = "This browser can't check passwords here (HTTPS needed).";
+    });
+  });
+  $("pwCancel").addEventListener("click", function () { $("pwDialog").hidden = true; goHome(); });
+
+  window.notesSend = function (text) {
+    if (typeof text !== "string") return;
+
+    // Keep notes to a reasonable size.
+    text = text.slice(0, 100000);
+
+    if (isHost) {
+      sharedNotesText = text;
+      broadcast({ type: "notes-update", text: text });
+    } else {
+      send(hostConn, { type: "notes-update", text: text });
+    }
+
+    var status = $("notesStatus");
+    if (status) status.textContent = "Notes synchronized";
+  };
+
+  //Poll
+    window.sendSyncedMediaState = function (state) {
+    if (!state || typeof state !== "object") return;
+    if (isHost) {
+      var action = state.action;
+      if (["load", "play", "pause", "seek", "clear"].indexOf(action) < 0) return;
+      var cleanState = { action: action, at: Date.now() };
+      if (action === "load") {
+        try {
+          var u = new URL(state.url);
+          if (!["https:", "http:"].includes(u.protocol) || u.username || u.password || u.href.length > 2000) return;
+          cleanState.url = u.href;
+        } catch (e) { return; }
+      } else if (["play", "pause", "seek"].indexOf(action) >= 0) {
+        if (!Number.isFinite(state.time) || state.time < 0 || state.time > 86400) return;
+        cleanState.time = state.time;
+        if (syncedMediaState && typeof syncedMediaState.url === "string") cleanState.url = syncedMediaState.url;
+      }
+      syncedMediaState = cleanState;
+      broadcast({ type: "media-sync", state: cleanState });
+    } else {
+      send(hostConn, { type: "media-sync", state: state });
+    }
+  };
+
+  window.createPoll = function (question, options) {
+    question = String(question || "").trim().slice(0, 200);
+
+    options = options
+      .map(function (option) {
+        return String(option || "").trim().slice(0, 100);
+      })
+      .filter(Boolean);
+
+    if (!question || options.length < 2 || options.length > 10) {
+      alert("Please provide a question and 2–10 options.");
+      return;
+    }
+
+    var poll = {
+      id: "poll-" + Date.now() + "-" +
+        Math.random().toString(36).slice(2, 8),
+      creatorId: myId,
+      name: name,
+      question: question,
+      options: options,
+      counts: options.map(function () { return 0; }),
+      votes: {},
+      closed: false
+    };
+
+    if (isHost) {
+      polls[poll.id] = poll;
+      addPollMessage(poll, true);
+      remember({ type: "poll", poll: poll });
+      broadcast({ type: "poll-create", poll: poll });
+    } else {
+      send(hostConn, {
+        type: "poll-create",
+        poll: poll
+      });
+    }
+
+    var dialog = $("pollDialog");
+    if (dialog) dialog.hidden = true;
+
+    var questionInput = $("pollQuestion");
+    if (questionInput) questionInput.value = "";
+
+    document.querySelectorAll(".pollOption").forEach(function (input, index) {
+      if (index < 2) {
+        input.value = "";
+      } else {
+        input.remove();
+      }
+    });
+  };
+
+  function recountPoll(poll) {
+    poll.counts = poll.options.map(function () {
+      return 0;
+    });
+
+    Object.keys(poll.votes || {}).forEach(function (voterId) {
+      var optionIndex = poll.votes[voterId];
+
+      if (
+        Number.isInteger(optionIndex) &&
+        optionIndex >= 0 &&
+        optionIndex < poll.options.length
+      ) {
+        poll.counts[optionIndex]++;
+      }
+    });
+  }
+  window.voteInPoll = function (pollId, optionIndex) {
+      var poll = polls[pollId];
+
+      if (
+        !poll ||
+        poll.closed ||
+        !Number.isInteger(optionIndex) ||
+        optionIndex < 0 ||
+        optionIndex >= poll.options.length
+      ) {
+        return;
+      }
+
+      poll.votes = poll.votes || {};
+
+      // Don't let this participant vote twice.
+      if (
+        Object.prototype.hasOwnProperty.call(poll.votes, myId)
+      ) {
+        return;
+      }
+
+      if (isHost) {
+        poll.votes[myId] = optionIndex;
+
+        recountPoll(poll);
+
+        if (typeof window.refreshPollMessage === "function") {
+          window.refreshPollMessage(poll);
+        }
+
+        remember({ type: "poll", poll: poll });
+
+        broadcast({
+          type: "poll-update",
+          poll: poll
+        });
+      } else {
+        send(hostConn, {
+          type: "poll-vote",
+          pollId: pollId,
+          optionIndex: optionIndex
+        });
+      }
+    };
 })();

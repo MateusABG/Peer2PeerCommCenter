@@ -1,76 +1,219 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Room · Peerly</title>
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/base.css">
-<link rel="stylesheet" href="css/room.css">
-<link rel="stylesheet" href="css/streaming.css">
-<link rel="icon" href="icon.png" type="image/x-icon">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Room · Peerly</title>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/room.css">
+  <link rel="stylesheet" href="css/streaming.css">
+  <link rel="stylesheet" href="css/media-sync.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#8f0014">
+  <link rel="icon" href="icon.png" type="image/png">
 </head>
+
 <body>
 
-<section id="room">
-  <aside class="left">
-    <div class="me">
-      <div class="name" id="meName">Username</div>
-      <div class="code">Room <b id="meCode">------</b></div>
-    </div>
-    <nav aria-label="Room sections">
-      <button data-view="chat" aria-current="page" id="chat" >Chat room</button>
-      <button data-view="stream" id="stream" >Stream room</button>
-      <button data-view="board" id="board" >Whiteboard room</button>
-      <button id="leaveBtn" class="leave">Leave</button>
-    </nav>
-    <div class="count">Users in room: <span id="userCount">1</span></div>
-  </aside>
-
-  <main>
-    <div class="view" id="v-chat">
-      <h3>Chat room</h3>
-      <div class="msgs" id="msgs" aria-live="polite"></div>
-      <div class="compose">
-        <input type="file" id="imgInput" accept="image/*" hidden>
-        <button type="button" class="attach" id="attachBtn" aria-label="Send an image" title="Send an image">+ File</button>
-        <input class="input" id="msgInput" placeholder="Write a message (or paste an image)" aria-label="Message">
-        <button class="btn" id="sendBtn">Send</button>
+  <section id="room">
+    <aside class="left">
+      <div class="me">
+        <div class="name" id="meName">Username</div>
+        <div class="code">Room <b id="meCode">------</b></div>
+        <button type="button" class="iconbtn invite" id="inviteBtn">Copy invite link</button>
+        <div id="pwDialog" class="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+          <form id="pwForm" class="pwbox" autocomplete="off">
+            <h3 id="pwTitle">This room needs a password</h3>
+            <input class="input" id="pwInput" type="password" autocomplete="current-password"
+              placeholder="Room password">
+            <p id="pwErr" class="pwerr" role="alert"></p>
+            <div class="pwbtns">
+              <button type="submit" class="btn">Join</button>
+              <button type="button" id="pwCancel" class="iconbtn">Cancel</button>
+            </div>
+          </form>
+        </div>
+        <button type="button" class="iconbtn" id="lockBtn" hidden>🔓 Lock room</button>
+        <div class="prefs">
+          <button type="button" class="iconbtn" id="soundBtn" title="Message sound"
+            aria-label="Message sound">🔊</button>
+          <button type="button" class="iconbtn" id="notifBtn" title="Desktop notifications"
+            aria-label="Desktop notifications">🔕</button>
+        </div>
       </div>
-    </div>
+      <nav aria-label="Room sections">
+        <button data-view="chat" aria-current="page" id="chat">Chat room <span id="chatBadge" class="count"
+            hidden>0</span></button>
+        <button data-view="stream" id="stream">Livestream room</button>
+        <button data-view="cinema" id="cinema">Cinema room</button>
+        <button data-view="board" id="board">Whiteboard room</button>
+        <button data-view="notes" id="notes">Shared Notes</button>
+        <button id="leaveBtn" class="leave">Leave</button>
+      </nav>
+      <div class="count">Users in room: <span id="userCount">1</span></div>
+    </aside>
 
-    <div class="view" id="v-stream" hidden>
-      <h3>Stream room</h3>
-      <div id="streamWindow" class="strWind">
-        <div class="placeholder" id="strEmpty">Nobody is streaming yet</div>
-        <span class="lbl main" id="mainLabel" hidden></span>
+    <main>
+      <div class="view" id="v-chat">
+        <header class="viewHeader chatHeader">
+          <h3>Chat room</h3>
+          <details class="exportMenu">
+            <summary class="attach" aria-label="Export room content">Export ▾</summary>
+            <div class="exportMenuItems">
+              <button type="button" id="exportChatBtn">Chat history (.txt)</button>
+              <button type="button" id="exportNotes">Shared notes (.txt)</button>
+              <button type="button" id="exportBoard">Whiteboard (.png)</button>
+            </div>
+          </details>
+        </header>
+        <div class="msgs" id="msgs" aria-live="polite"></div>
+        <div class="typing" class="typing" aria-live="polite"></div>
+        <div id="replyBar" class="replybar" hidden>
+          <span id="replyText"></span>
+          <button type="button" id="replyCancel" aria-label="Cancel reply">✕</button>
+        </div>
+        <div class="compose">
+          <input type="file" id="imgInput" accept="image/*" hidden>
+          <button type="button" class="attach" id="attachBtn" aria-label="Send an image" title="Send an image">+
+            File</button>
+          <button type="button" class="attach" id="createPollBtn" title="Create a poll">
+            Create Poll
+          </button>
+          <input class="input" id="msgInput" placeholder="Write a message (or paste an image)" aria-label="Message">
+          <button class="btn" id="sendBtn">Send</button>
+        </div>
+        <div class="pollDialog" id="pollDialog" hidden>
+          <div class="pollForm">
+            <h3>Create a poll</h3>
+
+            <label for="pollQuestion">Question</label>
+            <input id="pollQuestion" class="input" type="text" maxlength="200"
+              placeholder="What would you like to ask?">
+
+            <label>Options</label>
+            <input class="input pollOption" type="text" maxlength="100" placeholder="Option 1">
+            <input class="input pollOption" type="text" maxlength="100" placeholder="Option 2">
+
+            <button type="button" id="addPollOption">+ Add option</button>
+
+            <div class="pollActions">
+              <button type="button" id="cancelPoll">Cancel</button>
+              <button type="button" id="sendPoll" class="btn">Create poll</button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div id="thumbs" class="thumbsWind"></div>
-      <button id="startStream" class="streamBtn">Start Streaming</button>
-    </div>
 
-    <div class="view" id="v-board" hidden>
-      <h3>Whiteboard room</h3> 
-      <div class="wb">
-        <div class="tools" id="wbtools"><button class="pill" id="clr">Clear</button></div>
-        <div class="tip">Tip: turn your phone sideways for a bigger board</div>
-        <div class="cv"><canvas id="cv" width="1200" height="700"></canvas></div>
+      <div class="view" id="v-stream" hidden>
+        <h3>Stream room</h3>
+        <div id="streamWindow" class="strWind">
+          <div class="placeholder" id="strEmpty">Nobody is streaming yet</div>
+          <div class="laserLayer" id="laserLayer">
+            <div class="laserDot" id="laserDot" hidden></div>
+          </div>
+          <span class="lbl main" id="mainLabel" hidden></span>
+          <div class="audioCtl" id="audioCtl" hidden>
+            <button type="button" id="strMute" aria-label="Mute stream audio">🔊</button>
+            <input type="range" id="strVol" min="0" max="100" value="100" aria-label="Stream volume">
+          </div>
+        </div>
+        <div id="thumbs" class="thumbsWind"></div>
+        <div class="streamActions">
+          <button id="startStream" class="streamBtn">Start Streaming</button>
+          <button type="button" id="streamPipBtn" class="streamBtn" disabled title="Float the livestream in a separate window">Livestream PiP</button>
+        </div>
+        <div class="streamOpts">
+          <label><input type="checkbox" id="optAudio" checked> Share audio</label>
+          <label
+            title="Also offers your computer's whole sound output. Voices from this room would be included, so people may hear echoes.">
+            <input type="checkbox" id="optSystem"> Allow system audio (advanced)
+          </label>
+        </div>
+        <p id="streamNote" class="snote" role="status"></p>
+        <button id="startCamera" class="streamBtn">Start Camera</button>
+        <button id="laserBtn" class="streamBtn" aria-pressed="false" title="Point at things on the stream">Laser
+          pointer: off</button>
       </div>
-    </div>
-  </main>
 
-  <aside class="right">
-    <h4>Users</h4>
-    <ul class="users" id="userList"></ul>
-    <button class="mic" id="micBtn" aria-pressed="false">Mic off</button>
-  </aside>
-</section>
- 
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/config.js"></script>
-<script src="js/room.js"></script> 
-<script src="js/whiteboard.js"></script>
-<script src="js/streaming.js"></script>
-<script src="js/network.js"></script>
+      <div class="view cinemaView" id="v-cinema" hidden>
+        <h3>Cinema room</h3>
+                <section class="shared-media" aria-labelledby="sharedMediaTitle">
+          <h4 id="sharedMediaTitle">Synchronized media</h4>
+          <p>Share a direct video or audio file URL (MP4, WebM, MP3, OGG). Playback controls sync for everyone in the room.</p>
+          <form id="mediaLoadForm" class="media-load-form">
+            <label class="sr-only" for="mediaUrl">Media URL</label>
+            <input id="mediaUrl" type="url" class="input" placeholder="https://example.com/video.mp4" autocomplete="url" maxlength="2000">
+            <button class="streamBtn" type="submit">Load media</button>
+          </form>
+          <video id="sharedMediaPlayer" controls playsinline preload="metadata" disablepictureinpicture hidden></video>
+          <p id="mediaSyncStatus" class="snote" role="status" aria-live="polite">No shared media loaded.</p>
+        </section>
+      </div>
+
+      <div class="view" id="v-board" hidden>
+        <h3>Whiteboard room</h3>
+        <div class="wb">
+          <div class="tools" id="wbtools" role="toolbar" aria-label="Whiteboard tools">
+            <div class="tgroup" role="group" aria-label="Tool">
+              <button type="button" class="pill" data-tool="pen" aria-pressed="true">Pen</button>
+              <button type="button" class="pill" data-tool="eraser" aria-pressed="false">Eraser</button>
+              <button type="button" class="pill" data-tool="line" aria-pressed="false">Line</button>
+              <button type="button" class="pill" data-tool="arrow" aria-pressed="false">Arrow</button>
+              <button type="button" class="pill" data-tool="rect" aria-pressed="false">Box</button>
+              <button type="button" class="pill" data-tool="ellipse" aria-pressed="false">Circle</button>
+              <button type="button" class="pill" data-tool="text" aria-pressed="false">Text</button>
+            </div>
+            <div class="tgroup" id="wbColors" role="group" aria-label="Colour"></div>
+            <div class="tgroup" role="group" aria-label="Size">
+              <button type="button" class="pill" data-size="s" aria-pressed="false" title="Thin">S</button>
+              <button type="button" class="pill" data-size="m" aria-pressed="true" title="Medium">M</button>
+              <button type="button" class="pill" data-size="l" aria-pressed="false" title="Thick">L</button>
+            </div>
+            <div class="tgroup">
+              <button type="button" class="pill" id="wbUndo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+              <button type="button" class="pill" id="wbRedo" title="Redo (Ctrl+Shift+Z)" disabled>↷ Redo</button>
+              <button type="button" class="pill" id="clr">Clear</button>
+              <button type="button" class="pill" id="wbSave" hidden title="Save the board as a PNG image">Save image</button>
+            </div>
+          </div>
+          <div class="tip">Tip: turn your phone sideways for a bigger board</div>
+          <div class="cv"><canvas id="cv" width="1200" height="700"></canvas></div>
+        </div>
+      </div>
+      <div class="view" id="v-notes" hidden>
+        <div class="notesHeader">
+          <h3>Shared Notes</h3>
+        </div>
+        <textarea id="sharedNotes" class="sharedNotes" placeholder="Write your notes here..."
+          aria-label="Shared notes"></textarea>
+        <p id="notesStatus" class="notesStatus" role="status">
+          Not synchronized yet
+        </p>
+      </div>
+    </main>
+
+    <aside class="right">
+      <h4>Users</h4>
+      <ul class="users" id="userList"></ul>
+      <button class="mic" id="micBtn" aria-pressed="false">Mic off</button>
+    </aside>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/room.js"></script>
+  <script src="js/whiteboard.js"></script>
+  <script src="js/streaming.js"></script>
+  <script src="js/laser.js"></script>
+  <script src="js/voices.js"></script>
+  <script src="js/speaking.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/media-sync.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/pwa.js"></script>
 </body>
+
 </html>

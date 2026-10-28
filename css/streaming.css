@@ -1,11 +1,11 @@
 #v-stream{overflow-y:auto;padding-bottom:20px}
-#v-stream > :not(h3){margin-left:15%;margin-right:15%}
+#v-stream > :not(h3){margin-left:auto;margin-right:auto}
 
 .strWind{
   position:relative;
   width:calc(100% - 48px);
   max-width:960px;
-  margin-top:18px;
+  margin:18px auto 0;
   aspect-ratio:16 / 9;
   background:#000;
   border:2px solid #2a0000;
@@ -23,7 +23,7 @@
   display:flex;
   gap:12px;
   max-width:960px;
-  margin-top:14px;
+  margin:14px auto 0;
   padding-bottom:6px;
   overflow-x:auto;
 }
@@ -52,4 +52,17 @@
   font-weight:700;cursor:pointer;
 }
 .streamBtn:hover{background:#1a0000}
- 
+
+/* ---------- laser pointer ---------- */
+/* The layer covers the whole stream window but ignores the mouse until Laser mode is on. */
+.laserLayer{position:absolute;inset:0;z-index:1;pointer-events:none;touch-action:none}
+.laserLayer.on{pointer-events:auto;cursor:crosshair}
+.laserDot{
+  position:absolute;width:16px;height:16px;border-radius:50%;
+  background:#ff2b3d;box-shadow:0 0 12px 4px rgba(255,43,61,.8);
+  transform:translate(-50%,-50%);   /* the dot's CENTRE sits on the left/top we set */
+  pointer-events:none;
+}
+.audioCtl{z-index:2}                /* keep the volume controls clickable above the layer */
+.streamBtn[aria-pressed="true"]{background:var(--red);color:#000}
+
