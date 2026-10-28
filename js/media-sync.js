@@ -1,11 +1,15 @@
 /* Synchronized direct-media player. Network authority/validation lives in network.js. */
 (function () {
   "use strict";
+
   var form = document.getElementById("mediaLoadForm");
   var input = document.getElementById("mediaUrl");
   var player = document.getElementById("sharedMediaPlayer");
   var status = document.getElementById("mediaSyncStatus");
-  if (!form || !input || !player || !status) return;
+  var embed = document.getElementById("sharedMediaEmbed");
+
+  if (!form || !input || !player || !status || !embed) return;
+
   // PiP is reserved for the livestream player. Keep this cinema-room player in-page.
   player.disablePictureInPicture = true;
 
@@ -19,6 +23,54 @@
       return ["http:", "https:"].indexOf(url.protocol) >= 0 && !url.username && !url.password && raw.length <= 2000;
     } catch (e) { return false; }
   }
+  
+  function detectMediaType(raw) {
+    try {
+      var url = new URL(raw);
+      var host = url.hostname.toLowerCase().replace(/^www\./, "");
+
+      if (
+        host === "youtube.com" ||
+        host === "m.youtube.com" ||
+        host === "youtu.be" ||
+        host === "youtube-nocookie.com" ||
+        host === "www.youtube-nocookie.com"
+      ) {
+        var videoId = "";
+
+        if (host === "youtu.be") {
+          videoId = url.pathname.slice(1).split("/")[0];
+        } else {
+          videoId = url.searchParams.get("v") || "";
+
+          if (!videoId && url.pathname.startsWith("/embed/")) {
+            videoId = url.pathname.split("/")[2] || "";
+          }
+        }
+
+        if (/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+          return { type: "youtube", id: videoId };
+        }
+      }
+
+      if (host === "twitch.tv" || host === "m.twitch.tv") {
+        var parts = url.pathname.split("/").filter(Boolean);
+
+        if (parts[0] === "videos" && /^\d+$/.test(parts[1] || "")) {
+          return { type: "twitch-video", id: parts[1] };
+        }
+
+        if (parts[0] && /^[a-zA-Z0-9_]{1,25}$/.test(parts[0])) {
+          return { type: "twitch", id: parts[0] };
+        }
+      }
+
+      return { type: "direct", url: url.href };
+    } catch (e) {
+      return null;
+    }
+  }
+
   function send(action) {
     if (applyingRemote || !window.sendSyncedMediaState) return;
     var state = { action: action, time: Number.isFinite(player.currentTime) ? player.currentTime : 0 };
@@ -27,18 +79,73 @@
   }
   function statusText(text) { status.textContent = text; }
 
+
   form.addEventListener("submit", function (event) {
     event.preventDefault();
-    var url = input.value.trim();
-    if (!validUrl(url)) { statusText("Enter a valid HTTP(S) media URL without credentials."); return; }
-    applyingRemote = true;
-    player.src = url;
-    player.hidden = false;
+
+    var raw = input.value.trim();
+
+    if (!validUrl(raw)) {
+      statusText("Enter a valid HTTP(S) media URL without credentials.");
+      return;
+    }
+
+    var media = detectMediaType(raw);
+
+    if (!media) {
+      statusText("That media link could not be recognized.");
+      return;
+    }
+
+    // Hide both players before selecting the new one.
+    embed.hidden = true;
+    embed.replaceChildren();
+    player.pause();
+    player.removeAttribute("src");
     player.load();
-    applyingRemote = false;
-    statusText("Media loaded. Press play to synchronize playback.");
-    send("load");
+    player.hidden = true;
+
+    if (media.type === "youtube") {
+      var frame = document.createElement("iframe");
+      frame.src = "https://www.youtube-nocookie.com/embed/" +
+        encodeURIComponent(media.id) + "?enablejsapi=1";
+      frame.title = "Shared YouTube video";
+      frame.allow = "autoplay; encrypted-media; picture-in-picture";
+      frame.allowFullscreen = true;
+      frame.referrerPolicy = "strict-origin-when-cross-origin";
+
+      embed.appendChild(frame);
+      embed.hidden = false;
+      statusText("YouTube video loaded. Platform synchronization is not enabled yet.");
+
+    } else if (media.type === "twitch" || media.type === "twitch-video") {
+      var frame = document.createElement("iframe");
+      var parent = window.location.hostname || "localhost";
+      var twitchPath = media.type === "twitch-video"
+        ? "videos/" + encodeURIComponent(media.id)
+        : encodeURIComponent(media.id);
+
+      frame.src = "https://player.twitch.tv/?" +
+        (media.type === "twitch-video" ? "video=" + encodeURIComponent(media.id) : "channel=" + encodeURIComponent(media.id)) +
+        "&parent=" + encodeURIComponent(parent) +
+        "&autoplay=false";
+      frame.title = "Shared Twitch stream";
+      frame.allow = "autoplay; fullscreen";
+      frame.allowFullscreen = true;
+
+      embed.appendChild(frame);
+      embed.hidden = false;
+      statusText("Twitch player loaded. Platform synchronization is not enabled yet.");
+
+    } else {
+      player.src = media.url;
+      player.hidden = false;
+      player.load();
+      statusText("Media loaded. Press play to synchronize playback.");
+      send("load");
+    }
   });
+
 
   player.addEventListener("play", function () { send("play"); });
   player.addEventListener("pause", function () { if (!player.ended) send("pause"); });

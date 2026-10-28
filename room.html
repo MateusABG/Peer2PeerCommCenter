@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="utf-8">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Room · Peerly</title>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -115,7 +116,8 @@
         <div id="thumbs" class="thumbsWind"></div>
         <div class="streamActions">
           <button id="startStream" class="streamBtn">Start Streaming</button>
-          <button type="button" id="streamPipBtn" class="streamBtn" disabled title="Float the livestream in a separate window">Livestream PiP</button>
+          <button type="button" id="streamPipBtn" class="streamBtn" disabled
+            title="Float the livestream in a separate window">Livestream PiP</button>
         </div>
         <div class="streamOpts">
           <label><input type="checkbox" id="optAudio" checked> Share audio</label>
@@ -132,16 +134,26 @@
 
       <div class="view cinemaView" id="v-cinema" hidden>
         <h3>Cinema room</h3>
-                <section class="shared-media" aria-labelledby="sharedMediaTitle">
+        <section class="shared-media" aria-labelledby="sharedMediaTitle">
+
           <h4 id="sharedMediaTitle">Synchronized media</h4>
-          <p>Share a direct video or audio file URL (MP4, WebM, MP3, OGG). Playback controls sync for everyone in the room.</p>
+          <p>Share a direct video/audio URL, YouTube link, or Twitch link with everyone in the room.</p>
+
           <form id="mediaLoadForm" class="media-load-form">
             <label class="sr-only" for="mediaUrl">Media URL</label>
-            <input id="mediaUrl" type="url" class="input" placeholder="https://example.com/video.mp4" autocomplete="url" maxlength="2000">
+            <input id="mediaUrl" type="url" class="input" placeholder="Paste an MP4, YouTube, or Twitch URL"
+              autocomplete="url" maxlength="2000" required>
             <button class="streamBtn" type="submit">Load media</button>
           </form>
+
+          <div id="sharedMediaEmbed" class="shared-media-embed" hidden></div>
+
           <video id="sharedMediaPlayer" controls playsinline preload="metadata" disablepictureinpicture hidden></video>
-          <p id="mediaSyncStatus" class="snote" role="status" aria-live="polite">No shared media loaded.</p>
+
+          <p id="mediaSyncStatus" class="snote" role="status" aria-live="polite">
+            No shared media loaded.
+          </p>
+
         </section>
       </div>
 
@@ -171,7 +183,8 @@
               <button type="button" class="pill" id="wbUndo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
               <button type="button" class="pill" id="wbRedo" title="Redo (Ctrl+Shift+Z)" disabled>↷ Redo</button>
               <button type="button" class="pill" id="clr">Clear</button>
-              <button type="button" class="pill" id="wbSave" hidden title="Save the board as a PNG image">Save image</button>
+              <button type="button" class="pill" id="wbSave" hidden title="Save the board as a PNG image">Save
+                image</button>
             </div>
           </div>
           <div class="tip">Tip: turn your phone sideways for a bigger board</div>
