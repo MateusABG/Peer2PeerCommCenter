@@ -1,5 +1,5 @@
 /* Conservative app-shell cache. PeerJS and Google Fonts stay network-only. */
-const CACHE_NAME = "peerly-shell-v5";
+const CACHE_NAME = "peerly-shell-v4";
 const APP_SHELL = [
   "./", "./index.html", "./room.html", "./manifest.webmanifest",
   "./css/base.css", "./css/login.css", "./css/room.css", "./css/streaming.css", "./css/media-sync.css",
@@ -18,11 +18,10 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  // network first (so updated CSS/JS always arrive), the cache only when offline
-  event.respondWith(fetch(request).then(response => {
+  event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
     if (response && response.ok && response.type === "basic") {
       const copy = response.clone(); caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
     }
     return response;
-  }).catch(() => caches.match(request).then(cached => cached || caches.match("./index.html"))));
+  }).catch(() => caches.match("./index.html"))));
 });
