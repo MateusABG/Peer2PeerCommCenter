@@ -91,6 +91,7 @@
     }
 
     var media = detectMediaType(raw);
+    console.log("[Cinema] Detected media:", media);
 
     if (!media) {
       statusText("That media link could not be recognized.");
