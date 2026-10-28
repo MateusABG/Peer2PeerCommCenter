@@ -107,6 +107,7 @@
     player.hidden = true;
 
     if (media.type === "youtube") {
+      console.log("[Cinema] Creating YouTube embed");
       var frame = document.createElement("iframe");
       frame.src = "https://www.youtube-nocookie.com/embed/" +
         encodeURIComponent(media.id) + "?enablejsapi=1";
@@ -139,6 +140,7 @@
       statusText("Twitch player loaded. Platform synchronization is not enabled yet.");
 
     } else {
+      console.log("[Cinema] Loading direct media:", media.url);
       player.src = media.url;
       player.hidden = false;
       player.load();
