@@ -435,3 +435,49 @@ canvas{background:#fff;border-radius:10px;max-width:100%;max-height:100%;touch-a
   .viewHeader h3{padding:14px 10px;font-size:1rem}
   .headerAction{padding:8px;font-size:.82rem;white-space:nowrap}
 }
+
+
+/* Cinema room: large responsive media player */
+#v-cinema .shared-media {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+#v-cinema .shared-media-embed,
+#v-cinema #sharedMediaPlayer {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-top: 12px;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+#v-cinema .shared-media-embed iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+#v-cinema #sharedMediaPlayer {
+  height: auto;
+  object-fit: contain;
+}
+
+#v-cinema .shared-media-embed[hidden],
+#v-cinema #sharedMediaPlayer[hidden] {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  #v-cinema .shared-media {
+    max-width: 100%;
+  }
+
+  #v-cinema .shared-media-embed,
+  #v-cinema #sharedMediaPlayer {
+    border-radius: 6px;
+  }
+}
