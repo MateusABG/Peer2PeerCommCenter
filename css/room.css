@@ -422,22 +422,16 @@ canvas{background:#fff;border-radius:10px;max-width:100%;max-height:100%;touch-a
   font-size: .78rem;
   text-align: right;
 }
-/* Chat header actions, including all export options, stay in one predictable place. */
-.viewHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-right:20px;border-bottom:1px solid #2a0000;flex:none}
+/* Each screen owns the export action for its content. */
+.viewHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-right:20px;border-bottom:1px solid #2a0000;flex:none;min-width:0}
 .viewHeader h3{flex:1;min-width:0;border:0;padding:18px 24px}
-.exportMenu{position:relative;flex:none;margin-right:4px}
-.exportMenu summary{list-style:none;cursor:pointer;user-select:none}
-.exportMenu summary::-webkit-details-marker{display:none}
-.exportMenuItems{position:absolute;right:0;top:calc(100% + 8px);z-index:30;min-width:190px;padding:6px;background:#080808;border:1px solid var(--red);border-radius:10px;box-shadow:0 8px 24px #000b;display:flex;flex-direction:column;gap:4px}
-.exportMenuItems button{padding:10px 12px;text-align:left;white-space:nowrap;background:#100608;color:var(--text);border:1px solid #3a1016;border-radius:6px;cursor:pointer}
-.exportMenuItems button:hover{background:#300008;border-color:var(--red)}
-.exportMenu:not([open]) .exportMenuItems{display:none}
+.headerAction{flex:none;padding:9px 12px;background:#080808;color:var(--red);border:1px solid var(--red);border-radius:0 12px 0 0;font-weight:700;cursor:pointer}
+.headerAction:hover{background:#260000}
 .streamActions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
 .streamActions .streamBtn{margin-top:16px}
 #streamPipBtn:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:640px){
-  .viewHeader{padding-right:10px;gap:4px}
-  .viewHeader h3{padding:14px 12px}
-  .exportMenu summary{padding:8px 10px}
-  .exportMenuItems{min-width:165px}
+  .viewHeader{padding-right:8px;gap:6px}
+  .viewHeader h3{padding:14px 10px;font-size:1rem}
+  .headerAction{padding:8px;font-size:.82rem;white-space:nowrap}
 }

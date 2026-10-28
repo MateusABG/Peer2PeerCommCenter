@@ -1,19 +1,24 @@
-#v-stream{overflow-y:auto;padding-bottom:20px}
-#v-stream > :not(h3){margin-left:auto;margin-right:auto}
+#v-stream{overflow-y:auto;overflow-x:hidden;padding:0 0 20px;min-width:0;min-height:0;gap:0}
+#v-stream > :not(h3){margin-left:auto;margin-right:auto;max-width:100%}
+#v-stream > h3{flex:none}
 
 .strWind{
   position:relative;
+  flex:0 0 auto;
   width:calc(100% - 48px);
   max-width:960px;
+  min-width:0;
   margin:18px auto 0;
   aspect-ratio:16 / 9;
   background:#000;
   border:2px solid #2a0000;
-  border-radius:28px;
+  border-radius:clamp(10px, 2vw, 28px);
   overflow:hidden;
+  isolation:isolate;
 }
-.strWind video{width:100%;height:100%;object-fit:contain;background:#000}
-.strWind .placeholder{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)}
+.strWind video{position:absolute;inset:0;display:block;width:100%;height:100%;max-width:100%;object-fit:contain;background:#000}
+.strWind video[hidden]{display:none!important}
+.strWind .placeholder{position:absolute;inset:0;display:grid;place-items:center;padding:12px;text-align:center;color:var(--muted)}
 
 /* streamer name: red, bottom-left of the main screen */
 .lbl{position:absolute;font-weight:700;pointer-events:none;text-shadow:0 1px 4px #000,0 0 2px #000}
@@ -66,3 +71,16 @@
 .audioCtl{z-index:2}                /* keep the volume controls clickable above the layer */
 .streamBtn[aria-pressed="true"]{background:var(--red);color:#000}
 
+
+/* Mobile layout: keep the live video visible and give it a stable aspect-ratio box. */
+@media (max-width: 640px) {
+  #v-stream { align-items:stretch; }
+  .strWind { width:calc(100% - 24px); margin-top:12px; min-height:170px; max-height:55vw; }
+  .thumbsWind { width:calc(100% - 24px); max-width:none; margin-top:10px; }
+  .thumb { width:min(42vw, 170px); border-radius:10px; }
+  .lbl.main { left:12px; bottom:10px; font-size:1rem; }
+  .streamActions, .streamOpts, #streamNote, #startCamera, #laserBtn { width:calc(100% - 24px); }
+  .streamActions { margin-top:4px; }
+  .streamActions .streamBtn { margin-top:8px; }
+  .streamOpts { flex-wrap:wrap; gap:8px 14px; }
+}

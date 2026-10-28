@@ -1,4 +1,4 @@
-/* Centralized exports exposed from the chat header. */
+/* Each export action lives in the header of the screen it exports. */
 (function () {
   "use strict";
   var chatButton = document.getElementById("exportChatBtn");

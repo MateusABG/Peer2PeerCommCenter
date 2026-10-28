@@ -59,14 +59,7 @@
       <div class="view" id="v-chat">
         <header class="viewHeader chatHeader">
           <h3>Chat room</h3>
-          <details class="exportMenu">
-            <summary class="attach" aria-label="Export room content">Export ▾</summary>
-            <div class="exportMenuItems">
-              <button type="button" id="exportChatBtn">Chat history (.txt)</button>
-              <button type="button" id="exportNotes">Shared notes (.txt)</button>
-              <button type="button" id="exportBoard">Whiteboard (.png)</button>
-            </div>
-          </details>
+          <button type="button" class="headerAction" id="exportChatBtn">Export chat</button>
         </header>
         <div class="msgs" id="msgs" aria-live="polite"></div>
         <div class="typing" class="typing" aria-live="polite"></div>
@@ -153,7 +146,10 @@
       </div>
 
       <div class="view" id="v-board" hidden>
-        <h3>Whiteboard room</h3>
+        <header class="viewHeader">
+          <h3>Whiteboard room</h3>
+          <button type="button" class="headerAction" id="exportBoard">Export drawing</button>
+        </header>
         <div class="wb">
           <div class="tools" id="wbtools" role="toolbar" aria-label="Whiteboard tools">
             <div class="tgroup" role="group" aria-label="Tool">
@@ -183,9 +179,10 @@
         </div>
       </div>
       <div class="view" id="v-notes" hidden>
-        <div class="notesHeader">
+        <header class="viewHeader notesHeader">
           <h3>Shared Notes</h3>
-        </div>
+          <button type="button" class="headerAction" id="exportNotes">Export notes</button>
+        </header>
         <textarea id="sharedNotes" class="sharedNotes" placeholder="Write your notes here..."
           aria-label="Shared notes"></textarea>
         <p id="notesStatus" class="notesStatus" role="status">
