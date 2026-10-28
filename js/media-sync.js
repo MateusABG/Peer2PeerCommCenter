@@ -107,19 +107,27 @@
     player.hidden = true;
 
     if (media.type === "youtube") {
-      console.log("[Cinema] Creating YouTube embed");
       var frame = document.createElement("iframe");
-      frame.src = "https://www.youtube-nocookie.com/embed/" +
-        encodeURIComponent(media.id) + "?enablejsapi=1";
+    
       frame.title = "Shared YouTube video";
       frame.allow = "autoplay; encrypted-media; picture-in-picture";
       frame.allowFullscreen = true;
       frame.referrerPolicy = "strict-origin-when-cross-origin";
-
-      embed.appendChild(frame);
+    
+      // Set the source only after configuring the iframe.
+      frame.src =
+        "https://www.youtube-nocookie.com/embed/" +
+        encodeURIComponent(media.id) +
+        "?enablejsapi=1&origin=" +
+        encodeURIComponent(window.location.origin);
+    
+      embed.replaceChildren(frame);
       embed.hidden = false;
-      statusText("YouTube video loaded. Platform synchronization is not enabled yet.");
-
+    
+      statusText("Loading YouTube video...");
+      frame.addEventListener("load", function () {
+        statusText("YouTube player loaded. If playback fails, check the browser console.");
+      }, { once: true });
     } else if (media.type === "twitch" || media.type === "twitch-video") {
       var frame = document.createElement("iframe");
       var parent = window.location.hostname || "localhost";
