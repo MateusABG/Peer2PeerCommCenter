@@ -102,22 +102,17 @@
 
       <div class="view" id="v-stream" hidden>
         <h3>Stream room</h3>
-        <div id="streamWindow" class="strWind">
-          <div class="placeholder" id="strEmpty">Nobody is streaming yet</div>
-          <div class="laserLayer" id="laserLayer">
-            <div class="laserDot" id="laserDot" hidden></div>
-          </div>
-          <span class="lbl main" id="mainLabel" hidden></span>
-          <div class="audioCtl" id="audioCtl" hidden>
-            <button type="button" id="strMute" aria-label="Mute stream audio">🔊</button>
-            <input type="range" id="strVol" min="0" max="100" value="100" aria-label="Stream volume">
+        <div class="streamToolbar">
+          <div class="addScreen">
+            <button type="button" id="addScreenBtn" class="streamBtn" aria-haspopup="true"
+              aria-expanded="false" aria-controls="addScreenMenu" disabled>+ Add screen</button>
+            <ul id="addScreenMenu" class="addMenu" role="menu" hidden></ul>
           </div>
         </div>
-        <div id="thumbs" class="thumbsWind"></div>
+        <p id="strEmpty" class="gridEmpty">Nobody is streaming yet</p>
+        <div id="streamGrid" class="streamGrid"></div>
         <div class="streamActions">
           <button id="startStream" class="streamBtn">Start Streaming</button>
-          <button type="button" id="streamPipBtn" class="streamBtn" disabled
-            title="Float the livestream in a separate window">Livestream PiP</button>
         </div>
         <div class="streamOpts">
           <label><input type="checkbox" id="optAudio" checked> Share audio</label>

@@ -2,52 +2,8 @@
 #v-stream > :not(h3){margin-left:auto;margin-right:auto;max-width:100%}
 #v-stream > h3{flex:none}
 
-.strWind{
-  position:relative;
-  flex:0 0 auto;
-  width:calc(100% - 48px);
-  max-width:960px;
-  min-width:0;
-  margin:18px auto 0;
-  aspect-ratio:16 / 9;
-  background:#000;
-  border:2px solid #2a0000;
-  border-radius:clamp(10px, 2vw, 28px);
-  overflow:hidden;
-  isolation:isolate;
-}
-.strWind video{position:absolute;inset:0;display:block;width:100%;height:100%;max-width:100%;object-fit:contain;background:#000}
-.strWind video[hidden]{display:none!important}
-.strWind .placeholder{position:absolute;inset:0;display:grid;place-items:center;padding:12px;text-align:center;color:var(--muted)}
-
-/* streamer name: red, bottom-left of the main screen */
+/* streamer name, bottom-left of a tile */
 .lbl{position:absolute;font-weight:700;pointer-events:none;text-shadow:0 1px 4px #000,0 0 2px #000}
-.lbl.main{left:28px;bottom:16px;font-size:1.3rem;color:#ff2b3d}
-
-.thumbsWind{
-  display:flex;
-  gap:12px;
-  max-width:960px;
-  margin:14px auto 0;
-  padding-bottom:6px;
-  overflow-x:auto;
-}
-.thumb{
-  position:relative;
-  flex:0 0 auto;
-  width:170px;
-  aspect-ratio:16 / 9;
-  background:#000;
-  border:2px solid #2a0000;
-  border-radius:18px;
-  overflow:hidden;
-  cursor:pointer;
-  transition:border-color .15s, transform .15s;
-}
-.thumb:hover,.thumb:focus-visible{border-color:var(--line);transform:translateY(-2px)}
-.thumb video{width:100%;height:100%;object-fit:cover;pointer-events:none}
-/* streamer name: blue, top-right of the thumbnail */
-.thumb .lbl{top:6px;right:12px;font-size:.95rem;color:#19a8ff}
 
 .streamBtn{
   margin-top:16px;align-self:flex-start;
@@ -57,6 +13,68 @@
   font-weight:700;cursor:pointer;
 }
 .streamBtn:hover{background:#1a0000}
+
+/* ---------- the grid ---------- */
+/* "#v-stream" in the selectors matters: "#v-stream > :not(h3)" sets max-width:100% and would win otherwise. */
+#v-stream .streamToolbar,
+#v-stream .streamGrid,
+#v-stream .gridEmpty { flex: 0 0 auto; width: calc(100% - 48px); max-width: 1200px; }
+.streamToolbar { margin-top: 18px; }
+
+.streamGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.streamGrid:empty { display: none; }
+
+.gridEmpty {
+  display: grid; place-items: center; margin-top: 12px; padding: 12px;
+  aspect-ratio: 16 / 9; max-height: 50vh; text-align: center;
+  background: #000; color: var(--muted);
+  border: 2px solid #2a0000; border-radius: clamp(10px, 2vw, 28px);
+}
+.gridEmpty[hidden] { display: none; }
+
+.tile {
+  position: relative; margin: 0; aspect-ratio: 16 / 9;
+  background: #000; border: 2px solid #2a0000;
+  border-radius: clamp(10px, 2vw, 28px); overflow: hidden; isolation: isolate;
+}
+.tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.tile .lbl { left: 14px; bottom: 10px; font-size: 1.05rem; color: #ff2b3d; }
+
+.tileBar { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; gap: 6px; }
+.tileBtn {
+  width: 32px; height: 32px; border: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, .65); color: #fff; font-size: 1rem; cursor: pointer;
+}
+.tileBtn:hover, .tileBtn:focus-visible { background: var(--red); color: #000; }
+.tileBtn[hidden] { display: none; }
+.tileBtn[aria-pressed="true"] { background: var(--red); color: #000; }
+
+/* full screen: the tile fills the whole display */
+.tile:fullscreen { width: 100vw; height: 100vh; aspect-ratio: auto; border: 0; border-radius: 0; }
+.tile:-webkit-full-screen { width: 100vw; height: 100vh; aspect-ratio: auto; border: 0; border-radius: 0; }
+.tile:fullscreen .lbl { font-size: 1.4rem; }
+
+/* "+ Add screen" dropdown */
+.addScreen { position: relative; display: inline-block; }
+.addScreen .streamBtn { margin-top: 0; }
+.addScreen .streamBtn:disabled { opacity: .45; cursor: not-allowed; }
+.addMenu {
+  position: absolute; z-index: 5; top: calc(100% + 6px); left: 0;
+  min-width: 220px; max-height: 260px; overflow: auto;
+  margin: 0; padding: 6px; list-style: none;
+  background: #0b0b0b; border: 2px solid var(--red); border-radius: 0 18px 0 0;
+}
+.addMenu[hidden] { display: none; }
+.addMenu button {
+  display: block; width: 100%; padding: 8px 12px; border: 0; border-radius: 8px;
+  background: none; color: #fff; text-align: left; cursor: pointer;
+}
+.addMenu button:hover, .addMenu button:focus-visible { background: #1a0000; }
 
 /* ---------- laser pointer ---------- */
 /* The layer covers the whole stream window but ignores the mouse until Laser mode is on. */
@@ -72,13 +90,32 @@
 .streamBtn[aria-pressed="true"]{background:var(--red);color:#000}
 
 
-/* Mobile layout: keep the live video visible and give it a stable aspect-ratio box. */
+/* ---------- tile layouts ---------- */
+/* 1 screen: alone.  2: side by side.  3: two on top, one wide below.  4: 2 x 2.  5-6: rows of three. */
+.tile { cursor: pointer; }
+.streamGrid[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
+.streamGrid[data-count="3"] .tile:nth-child(3) { grid-column: 1 / -1; aspect-ratio: 32 / 9; }
+.streamGrid[data-count="5"], .streamGrid[data-count="6"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.streamGrid[data-count="5"] .tile, .streamGrid[data-count="6"] .tile { grid-column: span 2; }
+.streamGrid[data-count="5"] .tile:nth-child(n+4) { grid-column: span 3; }
+
+/* clicked window: it goes big on top, everyone else sits in a row underneath */
+.streamGrid.focus { grid-template-columns: repeat(var(--others, 1), minmax(0, 1fr)) !important; }
+.streamGrid.focus .tile { grid-column: auto !important; aspect-ratio: 16 / 9 !important; }
+.streamGrid.focus .tile.isFocus { grid-column: 1 / -1 !important; max-height: 68vh; }
+.streamGrid.focus .tile.isFocus .lbl { font-size: 1.3rem; }
+.tile:fullscreen { aspect-ratio: auto !important; max-height: none !important; }
+.tile:-webkit-full-screen { aspect-ratio: auto !important; max-height: none !important; }
+
+/* Mobile layout */
 @media (max-width: 640px) {
   #v-stream { align-items:stretch; }
-  .strWind { width:calc(100% - 24px); margin-top:12px; min-height:170px; max-height:55vw; }
-  .thumbsWind { width:calc(100% - 24px); max-width:none; margin-top:10px; }
-  .thumb { width:min(42vw, 170px); border-radius:10px; }
-  .lbl.main { left:12px; bottom:10px; font-size:1rem; }
+  #v-stream .streamToolbar, #v-stream .streamGrid, #v-stream .gridEmpty { width: calc(100% - 24px); }
+  .streamGrid, .streamGrid[data-count] { grid-template-columns: minmax(0, 1fr); }
+  .streamGrid[data-count] .tile { grid-column: auto !important; aspect-ratio: 16 / 9 !important; }
+  .streamGrid.focus { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .streamGrid.focus .tile.isFocus { grid-column: 1 / -1 !important; }
+  .tile .lbl { left: 10px; bottom: 8px; font-size: .95rem; }
   .streamActions, .streamOpts, #streamNote, #startCamera, #laserBtn { width:calc(100% - 24px); }
   .streamActions { margin-top:4px; }
   .streamActions .streamBtn { margin-top:8px; }

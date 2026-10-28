@@ -1,5 +1,5 @@
 /* Conservative app-shell cache. PeerJS and Google Fonts stay network-only. */
-const CACHE_NAME = "peerly-shell-v3";
+const CACHE_NAME = "peerly-shell-v4";
 const APP_SHELL = [
   "./", "./index.html", "./room.html", "./manifest.webmanifest",
   "./css/base.css", "./css/login.css", "./css/room.css", "./css/streaming.css", "./css/media-sync.css",

@@ -534,11 +534,18 @@
     else send(hostConn, { type: "wb", m: m });
   };
 
-  window.laserSend = function (spot) {
-      if (!spot) return;
+  // A laser message names the stream it points at. "local" / "lcam" only mean something on MY screen,
+  // so they travel as my "s:<id>" / "c:<id>" and are turned back into local names on arrival.
+  function canonStream(id) { return id === "local" ? "s:" + myId : id === "lcam" ? "c:" + myId : id; }
+  function localStreamId(id) { return id === "s:" + myId ? "local" : id === "c:" + myId ? "lcam" : id; }
+  function validStreamId(id) { return typeof id === "string" && id.length > 2 && id.length <= 100; }
+
+  window.laserSend = function (spot, streamId) {
+      if (!spot || !validStreamId(streamId)) return;
 
       var message = {
           type: "laser",
+          sid: canonStream(streamId),
           spot: {
               x: spot.x,
               y: spot.y
@@ -549,6 +556,7 @@
           broadcast({
               type: "laser",
               id: myId,
+              sid: message.sid,
               spot: message.spot
           });
       } else {
@@ -644,16 +652,24 @@
     var kind = call.metadata && call.metadata.kind;
     if (MEDIA_KINDS.indexOf(kind) < 0) { call.close(); return; }
     function inRoom() { return users.some(function (u) { return u.id === call.peer; }); }
-    call.answer();
-    if (!inRoom()) {                                            
-      setTimeout(function () { if (inRoom()) onIncomingCall(call); else call.close(); }, 2000);
-      return;
-    }                                  // receive only
-    call.on("stream", function (stream) {
-      if (kind === "voice") playVoice(call.peer, stream);
-      else addStream(PREFIX[kind] + call.peer, stream);
-    });
+    var incoming = null, closed = false;
+    // Only people on the roster may show or play anything. The roster can lag a moment behind
+    // the call, so wait for it (up to ~3 s) while already listening, so the stream is never missed.
+    function deliver(triesLeft) {
+      if (closed || !incoming) return;
+      if (inRoom()) {
+        if (kind === "voice") playVoice(call.peer, incoming);
+        else addStream(PREFIX[kind] + call.peer, incoming);
+      } else if (triesLeft > 0) {
+        setTimeout(function () { deliver(triesLeft - 1); }, 500);
+      } else {
+        call.close();
+      }
+    }
+    call.answer();                                              // receive only
+    call.on("stream", function (stream) { incoming = stream; deliver(6); });
     call.on("close", function () {
+      closed = true;
       if (kind === "voice") removeVoice(call.peer);
       else removeStream(PREFIX[kind] + call.peer);
     });
@@ -673,6 +689,21 @@
     myStatus.screen = false;
     stopCalls("screen");
     announceMediaStop("screen");
+    publishStatus();
+  };
+  window.onLocalCameraStart = function (stream) {
+    cameraStream = stream;
+    myStatus.cam = true;
+    publishStatus();
+    users.forEach(function (u) {
+      if (u.id && u.id !== myId) callPeer(u.id, "camera", stream);
+    });
+  };
+  window.onLocalCameraStop = function () {
+    cameraStream = null;
+    myStatus.cam = false;
+    stopCalls("camera");
+    announceMediaStop("camera");
     publishStatus();
   };
 
@@ -937,15 +968,16 @@
           return;
       }
 
-      console.log("[laser] host received pointer from:", conn.peer, d.spot);
+      if (!validStreamId(d.sid)) return;
 
       if (window.laserReceive) {
-          window.laserReceive(conn.peer, spot);
+          window.laserReceive(conn.peer, spot, localStreamId(d.sid));
       }
 
       broadcast({
           type: "laser",
           id: conn.peer,
+          sid: d.sid,
           spot: {
               x: spot.x,
               y: spot.y
@@ -1199,8 +1231,8 @@
         if (window.Whiteboard) Whiteboard.applyRemote(d.m);
         break;
       case "laser":
-        if(window.laserReceive){
-          window.laserReceive(d.id,d.spot);
+        if (window.laserReceive && validStreamId(d.sid)) {
+          window.laserReceive(d.id, d.spot, localStreamId(d.sid));
         }
         return;
       case "media-stop":
