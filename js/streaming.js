@@ -1,5 +1,7 @@
 const grid = $("streamGrid");
 const strEmpty = $("strEmpty");
+const addBtn = $("addScreenBtn");
+const addMenu = $("addScreenMenu");
 const startBtn = $("startStream");
 var isStreaming = false;
 
@@ -51,9 +53,25 @@ function syncGrid() {
     strEmpty.hidden = tiles.size > 0;
     strEmpty.textContent = streams.size === 0
         ? "Nobody is streaming yet"
-        : "No screens on display.";
+        : "No screens on display. Use Add screen to show one.";
     tiles.forEach((_, id) => syncTile(id));
 
+    // the "Add screen" menu lists every available stream that has no tile
+    const hidden = [...streams.keys()].filter(id => !tiles.has(id));
+    addMenu.textContent = "";
+    hidden.forEach(id => {
+        const li = document.createElement("li");
+        li.setAttribute("role", "none");
+        const b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("role", "menuitem");
+        b.textContent = labelFor(id);
+        b.addEventListener("click", () => { closeMenu(); showTile(id); });
+        li.appendChild(b);
+        addMenu.appendChild(li);
+    });
+    addBtn.disabled = hidden.length === 0;
+    if (hidden.length === 0) closeMenu();
 }
 window.refreshStreamLabels = syncGrid;
 
@@ -98,10 +116,6 @@ function createTile(id) {
     const el = document.createElement("figure");
     el.className = "tile";
     el.dataset.id = id;
-    el.addEventListener("click", (event) => {
-        if (event.target.closest("button, .audioCtl")) return;
-        toggleFocus(id);
-    });
 
     const video = document.createElement("video");
     video.autoplay = true;
@@ -198,7 +212,7 @@ if (window.MutationObserver) new MutationObserver(resumeAll).observe(streamView,
 function showTile(id) {
     if (!streams.has(id) || tiles.has(id)) return;
     if (tiles.size >= MAX_TILES) {
-        note("Up to " + MAX_TILES + " screens can be shown at once. Remove one to add another.");
+        note("Up to " + MAX_TILES + " screens can be shown at once. Remove one, then use Add screen.");
         return;
     }
     createTile(id);
@@ -259,6 +273,14 @@ async function togglePip(id) {
         note("Picture-in-picture could not start for this stream.");
     }
 }
+
+/* ---------------------------- the Add menu ---------------------------- */
+
+function openMenu() { addMenu.hidden = false; addBtn.setAttribute("aria-expanded", "true"); }
+function closeMenu() { addMenu.hidden = true; addBtn.setAttribute("aria-expanded", "false"); }
+addBtn.addEventListener("click", () => { addMenu.hidden ? openMenu() : closeMenu(); });
+document.addEventListener("click", e => { if (!e.target.closest(".addScreen")) closeMenu(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
 
 /* ------------------- called by network.js and below ------------------- */
 
