@@ -23,7 +23,7 @@
 
 .streamGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -90,31 +90,11 @@
 .streamBtn[aria-pressed="true"]{background:var(--red);color:#000}
 
 
-/* ---------- tile layouts ---------- */
-/* 1 screen: alone.  2: side by side.  3: two on top, one wide below.  4: 2 x 2.  5-6: rows of three. */
-.tile { cursor: pointer; }
-.streamGrid[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
-.streamGrid[data-count="3"] .tile:nth-child(3) { grid-column: 1 / -1; aspect-ratio: 32 / 9; }
-.streamGrid[data-count="5"], .streamGrid[data-count="6"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.streamGrid[data-count="5"] .tile, .streamGrid[data-count="6"] .tile { grid-column: span 2; }
-.streamGrid[data-count="5"] .tile:nth-child(n+4) { grid-column: span 3; }
-
-/* clicked window: it goes big on top, everyone else sits in a row underneath */
-.streamGrid.focus { grid-template-columns: repeat(var(--others, 1), minmax(0, 1fr)) !important; }
-.streamGrid.focus .tile { grid-column: auto !important; aspect-ratio: 16 / 9 !important; }
-.streamGrid.focus .tile.isFocus { grid-column: 1 / -1 !important; max-height: 68vh; }
-.streamGrid.focus .tile.isFocus .lbl { font-size: 1.3rem; }
-.tile:fullscreen { aspect-ratio: auto !important; max-height: none !important; }
-.tile:-webkit-full-screen { aspect-ratio: auto !important; max-height: none !important; }
-
 /* Mobile layout */
 @media (max-width: 640px) {
   #v-stream { align-items:stretch; }
   #v-stream .streamToolbar, #v-stream .streamGrid, #v-stream .gridEmpty { width: calc(100% - 24px); }
-  .streamGrid, .streamGrid[data-count] { grid-template-columns: minmax(0, 1fr); }
-  .streamGrid[data-count] .tile { grid-column: auto !important; aspect-ratio: 16 / 9 !important; }
-  .streamGrid.focus { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  .streamGrid.focus .tile.isFocus { grid-column: 1 / -1 !important; }
+  .streamGrid { grid-template-columns: 1fr; }
   .tile .lbl { left: 10px; bottom: 8px; font-size: .95rem; }
   .streamActions, .streamOpts, #streamNote, #startCamera, #laserBtn { width:calc(100% - 24px); }
   .streamActions { margin-top:4px; }
