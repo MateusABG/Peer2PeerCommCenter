@@ -11,3 +11,10 @@
 #v-cinema{overflow-y:auto;align-items:stretch;padding-bottom:20px}
 #v-cinema > :not(h3){margin-left:auto;margin-right:auto}
 @media(max-width:640px){.shared-media{width:calc(100% - 24px);padding:12px}.media-load-form .streamBtn{width:100%}}
+
+/* the YouTube / Twitch player must fill the box, otherwise the browser gives it a tiny 300x150 frame */
+.shared-media-embed{margin-top:14px;width:100%;aspect-ratio:16/9;max-height:min(65vh,720px);border-radius:12px;overflow:hidden;background:#000}
+.shared-media-embed[hidden]{display:none}
+.shared-media-embed iframe,.shared-media-embed>div{display:block;width:100%;height:100%;border:0}
+.media-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.media-actions .streamBtn{margin:0}

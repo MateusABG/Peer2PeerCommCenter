@@ -66,6 +66,7 @@
     layer.className = "laserLayer" + (laserOn ? " on" : "");
     const dot = document.createElement("div");
     dot.className = "laserDot";
+    dot.style.setProperty("--c", userColor(name));   // my pointer wears my colour
     dot.hidden = true;
     layer.appendChild(dot);
     tileEl.appendChild(layer);
@@ -89,6 +90,9 @@
     video.addEventListener("loadedmetadata", function () { placeAll(v); });
     video.addEventListener("resize", function () { placeAll(v); });
   };
+
+  // the stream window may have moved (floating PiP window) or changed size: put every dot back
+  window.laserRefresh = function () { views.forEach(placeAll); };
 
   window.laserDetach = function (streamId) {
     const v = views.get(streamId);
@@ -124,6 +128,9 @@
     if (!r) {
       const d = document.createElement("div");
       d.className = "laserDot";
+      const who = (window.nameOfPeer && window.nameOfPeer(id)) || "";
+      d.style.setProperty("--c", userColor(who || id));   // their pointer wears their colour
+      if (who) d.dataset.name = who;
       d.hidden = true;
       v.layer.appendChild(d);
       r = { dot: d, spot: null, timer: 0 };

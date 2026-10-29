@@ -7,10 +7,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Room · Peerly</title>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/base.css">
-  <link rel="stylesheet" href="css/room.css">
-  <link rel="stylesheet" href="css/streaming.css">
-  <link rel="stylesheet" href="css/media-sync.css">
+  <link rel="stylesheet" href="css/base.css?v=7">
+  <link rel="stylesheet" href="css/room.css?v=7">
+  <link rel="stylesheet" href="css/streaming.css?v=7">
+  <link rel="stylesheet" href="css/media-sync.css?v=7">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#8f0014">
   <link rel="icon" href="icon.png" type="image/png">
@@ -42,6 +42,11 @@
             aria-label="Message sound">🔊</button>
           <button type="button" class="iconbtn" id="notifBtn" title="Desktop notifications"
             aria-label="Desktop notifications">🔕</button>
+          <button type="button" class="iconbtn" id="backupSave" title="Save this room to a file (chat, notes, drawing)"
+            aria-label="Save room backup">💾</button>
+          <button type="button" class="iconbtn" id="backupLoad" title="Load a saved room file"
+            aria-label="Import room backup">📂</button>
+          <input type="file" id="backupFile" accept=".json,application/json" hidden>
         </div>
       </div>
       <nav aria-label="Room sections">
@@ -140,6 +145,7 @@
               autocomplete="url" maxlength="2000" required>
             <button class="streamBtn" type="submit">Load media</button>
           </form>
+          <div class="media-actions"><button class="streamBtn" type="button" id="mediaClear">Stop sharing media</button></div>
 
           <div id="sharedMediaEmbed" class="shared-media-embed" hidden></div>
 
@@ -207,18 +213,19 @@
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/room.js"></script>
-  <script src="js/whiteboard.js"></script>
-  <script src="js/streaming.js"></script>
-  <script src="js/laser.js"></script>
-  <script src="js/voices.js"></script>
-  <script src="js/speaking.js"></script>
-  <script src="js/network.js"></script>
-  <script src="js/notifications.js"></script>
-  <script src="js/media-sync.js"></script>
-  <script src="js/export.js"></script>
-  <script src="js/pwa.js"></script>
+  <script src="js/config.js?v=7"></script>
+  <script src="js/room.js?v=7"></script>
+  <script src="js/whiteboard.js?v=7"></script>
+  <script src="js/streaming.js?v=7"></script>
+  <script src="js/laser.js?v=7"></script>
+  <script src="js/voices.js?v=7"></script>
+  <script src="js/speaking.js?v=7"></script>
+  <script src="js/network.js?v=7"></script>
+  <script src="js/notifications.js?v=7"></script>
+  <script src="js/media-sync.js?v=7"></script>
+  <script src="js/export.js?v=7"></script>
+  <script src="js/backup.js?v=7"></script>
+  <script src="js/pwa.js?v=7"></script>
 </body>
 
 </html>

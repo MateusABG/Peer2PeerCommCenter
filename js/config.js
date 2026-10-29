@@ -24,3 +24,11 @@ var isHost = params.get("host") === "1";
 
 var conns = [];   // host: every connected guest
 var hostConn;     // guest: connection to the host
+
+// Every person gets their own colour, worked out from their name, so it is the same on every screen.
+// Used for chat names, the user list, stream labels and laser pointers.
+function userColor(n) {
+  var s = String(n || ""), h = 7;
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return "hsl(" + (h % 360) + " 92% 63%)";
+}

@@ -8,6 +8,7 @@ var isStreaming = false;
 const MAX_TILES = 6;                 // screens shown at once (every tile is a live video decode)
 const OWN = ["local", "lcam"];       // my own streams: never play their sound back to me
 const streams = new Map();           // id -> MediaStream   everything that is available
+let focusId = null;                  // tile shown big (null = even grid)
 const tiles = new Map();             // id -> { el, video, lbl, mute, close }   what is on screen
 
 // Who owns a stream? ("local" = me, "s:<peerId>" = someone's screen, "c:<peerId>" = someone's camera)
@@ -24,7 +25,31 @@ if (!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) startBt
 
 // Re-draws everything that depends on "what is available / what is shown".
 // network.js also calls it (as refreshStreamLabels) when names arrive.
+function applyLayout() {
+    if (focusId && !tiles.has(focusId)) focusId = null;           // the focused screen went away: back to the grid
+    const n = tiles.size;
+    grid.dataset.count = Math.min(n, 6);
+    grid.classList.toggle("focus", !!focusId && n > 1);
+    grid.style.setProperty("--others", Math.max(1, n - 1));
+    tiles.forEach((t, id) => {
+        const big = !!focusId && id === focusId && n > 1;
+        t.el.classList.toggle("isFocus", big);
+        t.focus.textContent = big ? "▦" : "⛶";
+        t.focus.title = big ? "Back to the grid" : "Enlarge";
+        t.focus.setAttribute("aria-label", (big ? "Back to the grid: " : "Enlarge ") + labelFor(id));
+        t.focus.hidden = n < 2 && !big;                           // nothing to switch with a single screen
+        // in focus mode the focused tile goes first, the rest keep their order below it
+        t.el.style.order = big ? "-1" : "0";
+    });
+}
+
+function toggleFocus(id) {
+    focusId = (focusId === id) ? null : id;
+    applyLayout();
+}
+
 function syncGrid() {
+    applyLayout();
     strEmpty.hidden = tiles.size > 0;
     strEmpty.textContent = streams.size === 0
         ? "Nobody is streaming yet"
@@ -58,10 +83,12 @@ function syncTile(id) {
     const label = labelFor(id);
     const hasAudio = !!s && s.getAudioTracks().length > 0 && OWN.indexOf(id) < 0;
     const silent = t.video.muted || t.video.volume === 0;
-    const inPip = document.pictureInPictureElement === t.video;
+    const inPip = document.pictureInPictureElement === t.video || (docPip && docPip.id === id);
     const inFs = fsElement() === t.el;
 
     t.lbl.textContent = label;
+    const owner = OWN.indexOf(id) >= 0 ? name : (window.nameOfStream ? window.nameOfStream(id) : "");
+    t.lbl.style.setProperty("--u", owner ? userColor(owner) : "");
     t.audio.hidden = !hasAudio;
     t.mute.textContent = silent ? "🔇" : "🔊";
     t.mute.setAttribute("aria-label", (silent ? "Unmute " : "Mute ") + label);
@@ -108,14 +135,17 @@ function createTile(id) {
     const bar = document.createElement("div");
     bar.className = "tileBar";
     const pip = tileButton("⧉");
-    pip.hidden = !(document.pictureInPictureEnabled && video.requestPictureInPicture);
+    pip.classList.add("pipBtn");
+    pip.hidden = !(window.documentPictureInPicture || (document.pictureInPictureEnabled && video.requestPictureInPicture));
     pip.addEventListener("click", () => togglePip(id));
     const full = tileButton("⤢");
     full.hidden = !(el.requestFullscreen || el.webkitRequestFullscreen || video.webkitEnterFullscreen);
     full.addEventListener("click", () => toggleFullscreen(id));
+    const focus = tileButton("⛶");
+    focus.addEventListener("click", () => toggleFocus(id));
     const close = tileButton("✕");
     close.addEventListener("click", () => hideTile(id));
-    bar.append(pip, full, close);
+    bar.append(focus, pip, full, close);
 
     // bottom-right: speaker + volume (only shown for streams that carry sound)
     const audio = document.createElement("div");
@@ -148,9 +178,16 @@ function createTile(id) {
     audio.append(mute, vol);
 
     el.append(video, lbl, bar, audio);
+    // a click on the window enlarges it; clicking it again goes back to the previous layout
+    el.addEventListener("click", e => {
+        if (el.classList.contains("inPip")) return;
+        const small = grid.classList.contains("focus") && !el.classList.contains("isFocus");
+        if (e.target.closest("button, input") || (!small && e.target.closest(".laserLayer.on"))) return;   // (a big window ignores clicks while the laser aims)
+        toggleFocus(id);
+    });
     el.addEventListener("dblclick", e => { if (!e.target.closest("button, input")) toggleFullscreen(id); });
     grid.appendChild(el);
-    tiles.set(id, { el, video, lbl, pip, full, close, audio, mute, vol });
+    tiles.set(id, { el, video, lbl, pip, full, focus, close, audio, mute, vol });
     if (window.laserAttach) window.laserAttach(id, el, video);
 
     // Until the person has interacted with the page, browsers may refuse to play sound.
@@ -161,8 +198,21 @@ function createTile(id) {
             syncTile(id);
             note("The browser blocked sound. Click the speaker button on a screen to listen.");
         }
+        playQuietly(video);          // muted playback is always allowed: restart it, or the tile stays black
     });
+
+    // Remote pictures can arrive while the Livestream tab is hidden, or before the first frame:
+    // keep nudging the video until it is really playing.
+    video.addEventListener("loadedmetadata", () => playQuietly(video));
+    video.addEventListener("pause", () => { if (tiles.has(id) && !video.ended) setTimeout(() => playQuietly(video), 250); });
 }
+
+// Wake every video up (called when the Livestream tab is opened or the user clicks anywhere)
+function resumeAll() { tiles.forEach(t => { if (t.video.paused) playQuietly(t.video); }); }
+document.addEventListener("click", resumeAll);
+document.addEventListener("visibilitychange", resumeAll);
+const streamView = $("v-stream");
+if (window.MutationObserver) new MutationObserver(resumeAll).observe(streamView, { attributes: true, attributeFilter: ["hidden"] });
 
 function showTile(id) {
     if (!streams.has(id) || tiles.has(id)) return;
@@ -180,10 +230,12 @@ function hideTile(id) {
     const t = tiles.get(id);
     if (!t) return;
     if (document.pictureInPictureElement === t.video) document.exitPictureInPicture().catch(() => { });
+    if (docPip && docPip.id === id) { const w = docPip.win; docPip.hold.remove(); docPip = null; w.close(); }
     if (window.laserDetach) window.laserDetach(id);
     t.video.srcObject = null;      // lets the browser release the decoder
     t.el.remove();                 // (also leaves full screen if this tile was in it)
     tiles.delete(id);
+    if (focusId === id) focusId = null;
     syncGrid();
 }
 
@@ -210,18 +262,80 @@ function refreshAllTiles() { tiles.forEach((_, id) => syncTile(id)); }
 document.addEventListener("fullscreenchange", refreshAllTiles);
 document.addEventListener("webkitfullscreenchange", refreshAllTiles);
 
+// Floating window. Chrome, Edge and Brave can open a window that holds the WHOLE tile (picture, name, volume and
+// laser pointers). Other browsers only get the plain video PiP, which cannot show laser pointers.
+let docPip = null;                       // { id, win, hold }
+
+function closeDocPip() { if (docPip) docPip.win.close(); }   // "pagehide" below puts the tile back
+
+async function openDocPip(id) {
+    const t = tiles.get(id);
+    const r = t.el.getBoundingClientRect();
+    const win = await window.documentPictureInPicture.requestWindow({
+        width: Math.round(Math.max(320, Math.min(720, r.width || 480))),
+        height: Math.round(Math.max(180, Math.min(480, (r.width || 480) * 9 / 16)))
+    });
+    [...document.styleSheets].forEach(ss => {            // the floating window starts empty: copy the styles in
+        try {
+            const st = win.document.createElement("style");
+            st.textContent = [...ss.cssRules].map(rule => rule.cssText).join("\n");
+            win.document.head.appendChild(st);
+        } catch (e) {
+            if (!ss.href) return;
+            const l = win.document.createElement("link");
+            l.rel = "stylesheet"; l.href = ss.href;
+            win.document.head.appendChild(l);
+        }
+    });
+    win.document.body.style.cssText = "margin:0;background:#000;overflow:hidden";
+
+    const hold = document.createElement("div");           // keeps the tile's place in the grid
+    hold.className = "tile pipHold";
+    hold.textContent = "Playing in a floating window. Click to bring it back.";
+    hold.addEventListener("click", closeDocPip);
+    t.el.replaceWith(hold);
+    t.el.classList.add("inPip");
+    win.document.body.appendChild(t.el);
+    docPip = { id, win, hold };
+    playQuietly(t.video);
+    win.addEventListener("resize", () => window.laserRefresh && window.laserRefresh());
+    win.addEventListener("pagehide", () => {
+        const cur = docPip;
+        if (!cur) return;
+        docPip = null;
+        const tile = tiles.get(id);
+        if (tile) {
+            tile.el.classList.remove("inPip");
+            if (cur.hold.isConnected) cur.hold.replaceWith(tile.el);
+            playQuietly(tile.video);
+            syncTile(id);
+        } else cur.hold.remove();
+        if (window.laserRefresh) window.laserRefresh();
+    });
+    syncTile(id);
+    if (window.laserRefresh) window.laserRefresh();
+}
+
 // The browser allows ONE picture-in-picture window: starting another tile's PiP replaces the first.
 async function togglePip(id) {
     const t = tiles.get(id);
     if (!t) return;
     try {
+        if (docPip) {
+            const same = docPip.id === id;
+            closeDocPip();
+            if (same) return;
+        }
         if (document.pictureInPictureElement === t.video) {
             await document.exitPictureInPicture();
         } else if (t.video.readyState === 0) {
             note("This stream has no picture yet. Try again in a moment.");
+        } else if (window.documentPictureInPicture) {
+            await openDocPip(id);
+            note("");
         } else {
             await t.video.requestPictureInPicture();
-            note("");
+            note("This browser’s picture-in-picture cannot show laser pointers. Chrome, Edge and Brave can.");
         }
     } catch (err) {
         note("Picture-in-picture could not start for this stream.");

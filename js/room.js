@@ -32,7 +32,8 @@ function add(n, you, st) {
   var li = document.createElement("li"); if (you) li.className = "you";
   var d = document.createElement("i"); d.className = "dot" + (st.mic ? " live" : "");
   d.title = st.mic ? "Microphone on" : "Microphone off";
-  var s = document.createElement("span"); s.className = "uname"; s.textContent = n;
+  var s = document.createElement("span"); s.className = "uname"; s.textContent = n; s.style.color = userColor(n);
+  li.style.setProperty("--u", userColor(n));
   li.appendChild(d); li.appendChild(s);
   if (st.screen) { var b = document.createElement("span"); b.className = "badge"; b.textContent = "streaming"; li.appendChild(b) }
   if (!you && st.mic && st.id && window.Voices) li.appendChild(Voices.controls(st.id));

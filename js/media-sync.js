@@ -1,4 +1,6 @@
-/* Synchronized direct-media player. Network authority/validation lives in network.js. */
+/* Cinema room: one shared player for the whole room.
+ * Direct video files and YouTube links play in sync (play, pause, seeking). Twitch is shared but not time-synced.
+ * Network authority/validation lives in network.js; this file only sends { action, time, url } and applies what arrives. */
 (function () {
   "use strict";
 
@@ -7,203 +9,233 @@
   var player = document.getElementById("sharedMediaPlayer");
   var status = document.getElementById("mediaSyncStatus");
   var embed = document.getElementById("sharedMediaEmbed");
-
+  var clearBtn = document.getElementById("mediaClear");
   if (!form || !input || !player || !status || !embed) return;
 
-  // PiP is reserved for the livestream player. Keep this cinema-room player in-page.
   player.disablePictureInPicture = true;
 
-  var applyingRemote = false;
-  var lastActionAt = 0;
-  var driftTimer = null;
+  var cur = null;            // what is loaded now: { kind: "direct" | "youtube" | "twitch", url, id }
+  var yt = null;             // the YouTube player object
+  var quietUntil = 0;        // while a remote command is being applied, ignore the events it causes
+  var ytTimer = 0, ytLast = 0;
+  var loadToken = 0;         // a newer load cancels an older one that is still starting
+
+  function say(text) { status.textContent = text; }
+  function quiet(ms) { quietUntil = Date.now() + (ms || 900); }
+  function isQuiet() { return Date.now() < quietUntil; }
 
   function validUrl(raw) {
     try {
-      var url = new URL(raw);
-      return ["http:", "https:"].indexOf(url.protocol) >= 0 && !url.username && !url.password && raw.length <= 2000;
+      var u = new URL(raw);
+      return ["http:", "https:"].indexOf(u.protocol) >= 0 && !u.username && !u.password && raw.length <= 2000;
     } catch (e) { return false; }
   }
-  
-  function detectMediaType(raw) {
+
+  function detect(raw) {
     try {
       var url = new URL(raw);
       var host = url.hostname.toLowerCase().replace(/^www\./, "");
-
-      if (
-        host === "youtube.com" ||
-        host === "m.youtube.com" ||
-        host === "youtu.be" ||
-        host === "youtube-nocookie.com" ||
-        host === "www.youtube-nocookie.com"
-      ) {
-        var videoId = "";
-
-        if (host === "youtu.be") {
-          videoId = url.pathname.slice(1).split("/")[0];
-        } else {
-          videoId = url.searchParams.get("v") || "";
-
-          if (!videoId && url.pathname.startsWith("/embed/")) {
-            videoId = url.pathname.split("/")[2] || "";
-          }
-        }
-
-        if (/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-          return { type: "youtube", id: videoId };
-        }
+      if (["youtube.com", "m.youtube.com", "youtu.be", "youtube-nocookie.com"].indexOf(host) >= 0) {
+        var id = host === "youtu.be" ? url.pathname.slice(1).split("/")[0] : (url.searchParams.get("v") || "");
+        if (!id && /^\/(embed|shorts|live)\//.test(url.pathname)) id = url.pathname.split("/")[2] || "";
+        if (/^[a-zA-Z0-9_-]{11}$/.test(id)) return { kind: "youtube", id: id, url: url.href };
       }
-
       if (host === "twitch.tv" || host === "m.twitch.tv") {
-        var parts = url.pathname.split("/").filter(Boolean);
-
-        if (parts[0] === "videos" && /^\d+$/.test(parts[1] || "")) {
-          return { type: "twitch-video", id: parts[1] };
-        }
-
-        if (parts[0] && /^[a-zA-Z0-9_]{1,25}$/.test(parts[0])) {
-          return { type: "twitch", id: parts[0] };
-        }
+        var p = url.pathname.split("/").filter(Boolean);
+        if (p[0] === "videos" && /^\d+$/.test(p[1] || "")) return { kind: "twitch", video: p[1], url: url.href };
+        if (p[0] && /^[a-zA-Z0-9_]{1,25}$/.test(p[0])) return { kind: "twitch", channel: p[0], url: url.href };
       }
-
-      return { type: "direct", url: url.href };
-    } catch (e) {
-      return null;
-    }
+      return { kind: "direct", url: url.href };
+    } catch (e) { return null; }
   }
+
+  /* ------------------------------ sending ------------------------------ */
 
   function send(action) {
-    if (applyingRemote || !window.sendSyncedMediaState) return;
-    var state = { action: action, time: Number.isFinite(player.currentTime) ? player.currentTime : 0 };
-    if (action === "load") state.url = player.currentSrc || player.src;
-    window.sendSyncedMediaState(state);
+    if (!window.sendSyncedMediaState || !cur || isQuiet()) return;
+    var s = { action: action, time: getTime() };
+    if (action === "load") s.url = cur.url;
+    window.sendSyncedMediaState(s);
   }
-  function statusText(text) { status.textContent = text; }
 
+  /* --------------------- one set of controls, two players --------------------- */
 
-  form.addEventListener("submit", function (event) {
-    event.preventDefault();
+  function getTime() {
+    if (cur && cur.kind === "youtube") return yt && yt.getCurrentTime ? yt.getCurrentTime() || 0 : 0;
+    return Number.isFinite(player.currentTime) ? player.currentTime : 0;
+  }
+  function seekTo(t) {
+    if (cur && cur.kind === "youtube") { if (yt && yt.seekTo) yt.seekTo(t, true); }
+    else { try { player.currentTime = t; } catch (e) { } }
+  }
+  function doPlay() {
+    if (cur && cur.kind === "youtube") { if (yt && yt.playVideo) yt.playVideo(); return; }
+    var p = player.play();
+    if (p && p.catch) p.catch(function () { say("Playback is synchronized, but your browser needs you to press play."); });
+  }
+  function doPause() {
+    if (cur && cur.kind === "youtube") { if (yt && yt.pauseVideo) yt.pauseVideo(); } else player.pause();
+  }
 
-    var raw = input.value.trim();
+  /* ------------------------------ loading ------------------------------ */
 
-    if (!validUrl(raw)) {
-      statusText("Enter a valid HTTP(S) media URL without credentials.");
-      return;
-    }
-
-    var media = detectMediaType(raw);
-    console.log("[Cinema] Detected media:", media);
-
-    if (!media) {
-      statusText("That media link could not be recognized.");
-      return;
-    }
-
-    // Hide both players before selecting the new one.
-    embed.hidden = true;
+  function clearPlayers() {
+    clearInterval(ytTimer);
+    if (yt && yt.destroy) { try { yt.destroy(); } catch (e) { } }
+    yt = null;
     embed.replaceChildren();
+    embed.hidden = true;
     player.pause();
     player.removeAttribute("src");
     player.load();
     player.hidden = true;
+    cur = null;
+  }
 
-    if (media.type === "youtube") {
-      var frame = document.createElement("iframe");
-    
-      frame.title = "Shared YouTube video";
-      frame.allow = "autoplay; encrypted-media; picture-in-picture";
-      frame.allowFullscreen = true;
-      frame.referrerPolicy = "strict-origin-when-cross-origin";
-    
-      // Set the source only after configuring the iframe.
-      frame.src =
-        "https://www.youtube-nocookie.com/embed/" +
-        encodeURIComponent(media.id) +
-        "?enablejsapi=1&origin=" +
-        encodeURIComponent(window.location.origin);
-    
-      embed.replaceChildren(frame);
-      embed.hidden = false;
-    
-      statusText("Loading YouTube video...");
-      frame.addEventListener("load", function () {
-        statusText("YouTube player loaded. If playback fails, check the browser console.");
-      }, { once: true });
-    } else if (media.type === "twitch" || media.type === "twitch-video") {
-      var frame = document.createElement("iframe");
-      var parent = window.location.hostname || "localhost";
-      var twitchPath = media.type === "twitch-video"
-        ? "videos/" + encodeURIComponent(media.id)
-        : encodeURIComponent(media.id);
+  var ytApi = null;
+  function loadYtApi() {
+    if (window.YT && window.YT.Player) return Promise.resolve(true);
+    if (ytApi) return ytApi;
+    ytApi = new Promise(function (resolve) {
+      var previous = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function () { if (previous) previous(); resolve(true); };
+      var s = document.createElement("script");
+      s.src = "https://www.youtube.com/iframe_api";
+      s.onerror = function () { ytApi = null; resolve(false); };
+      document.head.appendChild(s);
+    });
+    return ytApi;
+  }
 
-      frame.src = "https://player.twitch.tv/?" +
-        (media.type === "twitch-video" ? "video=" + encodeURIComponent(media.id) : "channel=" + encodeURIComponent(media.id)) +
-        "&parent=" + encodeURIComponent(parent) +
-        "&autoplay=false";
-      frame.title = "Shared Twitch stream";
-      frame.allow = "autoplay; fullscreen";
-      frame.allowFullscreen = true;
+  // Shows the media on this screen. Resolves when it is ready to receive play / pause / seek.
+  function show(media) {
+    var token = ++loadToken;
+    clearPlayers();
+    cur = media;
+    input.value = media.url;
+    quiet(1500);
 
-      embed.appendChild(frame);
-      embed.hidden = false;
-      statusText("Twitch player loaded. Platform synchronization is not enabled yet.");
-
-    } else {
-      console.log("[Cinema] Loading direct media:", media.url);
-      player.src = media.url;
-      player.hidden = false;
-      player.load();
-      statusText("Media loaded. Press play to synchronize playback.");
-      send("load");
+    if (media.kind === "youtube") {
+      say("Loading YouTube video…");
+      return loadYtApi().then(function (ok) {
+        if (token !== loadToken) return false;
+        if (!ok) { say("YouTube could not be loaded. Check your connection or ad blocker."); return false; }
+        return new Promise(function (resolve) {
+          var holder = document.createElement("div");
+          embed.replaceChildren(holder);
+          embed.hidden = false;
+          yt = new YT.Player(holder, {
+            videoId: media.id,
+            playerVars: { playsinline: 1, rel: 0, origin: location.origin },
+            events: {
+              onReady: function () { ytLast = 0; startYtWatch(); say("YouTube ready. Play, pause and seeking are shared with the room."); resolve(true); },
+              onStateChange: function (e) {
+                if (isQuiet()) return;
+                if (e.data === 1) send("play");        // playing
+                else if (e.data === 2) send("pause");  // paused
+              },
+              onError: function () { say("YouTube refused to play this video (it may block embedding)."); resolve(false); }
+            }
+          });
+        });
+      });
     }
+
+    if (media.kind === "twitch") {
+      var f = document.createElement("iframe");
+      var q = media.video ? "video=" + encodeURIComponent(media.video) : "channel=" + encodeURIComponent(media.channel);
+      f.src = "https://player.twitch.tv/?" + q + "&parent=" + encodeURIComponent(location.hostname || "localhost") + "&autoplay=false";
+      f.title = "Shared Twitch stream";
+      f.allow = "autoplay; fullscreen";
+      f.allowFullscreen = true;
+      embed.replaceChildren(f);
+      embed.hidden = false;
+      say("Twitch is shared with everyone, but its playback is not time-synced.");
+      return Promise.resolve(true);
+    }
+
+    // direct file
+    player.src = media.url;
+    player.hidden = false;
+    player.load();
+    say("Media loaded. Press play to synchronize playback.");
+    return Promise.resolve(true);
+  }
+
+  // YouTube has no "seeked" event, so watch for the clock jumping
+  function startYtWatch() {
+    clearInterval(ytTimer);
+    ytTimer = setInterval(function () {
+      if (!yt || !yt.getCurrentTime) return;
+      var t = yt.getCurrentTime(), playing = yt.getPlayerState && yt.getPlayerState() === 1;
+      if (!isQuiet() && Math.abs(t - (ytLast + (playing ? 0.5 : 0))) > 1.5) send("seek");
+      ytLast = t;
+    }, 500);
+  }
+
+  /* --------------------------- the load button --------------------------- */
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var raw = input.value.trim();
+    if (!validUrl(raw)) { say("Enter a valid HTTP(S) media URL without credentials."); return; }
+    var media = detect(raw);
+    if (!media) { say("That media link could not be recognized."); return; }
+    show(media).then(function (ok) {
+      if (!ok) return;
+      quietUntil = 0;
+      send("load");          // everyone in the room now loads the same link
+    });
   });
 
+  if (clearBtn) clearBtn.addEventListener("click", function () {
+    clearPlayers();
+    say("Shared media cleared.");
+    if (window.sendSyncedMediaState) window.sendSyncedMediaState({ action: "clear" });
+  });
 
   player.addEventListener("play", function () { send("play"); });
   player.addEventListener("pause", function () { if (!player.ended) send("pause"); });
   player.addEventListener("seeked", function () { send("seek"); });
-  player.addEventListener("loadedmetadata", function () {
-    if (player.hidden) return;
-    statusText("Media ready. Playback controls synchronize across the room.");
-  });
+  player.addEventListener("loadedmetadata", function () { if (!player.hidden) say("Media ready. Playback controls synchronize across the room."); });
   player.addEventListener("error", function () {
-    if (!player.hidden) statusText("This URL could not be played. Use a direct, browser-supported media file URL.");
+    if (!player.hidden) say("This URL could not be played. Use a direct, browser-supported media file URL.");
   });
 
-  window.applySyncedMedia = function (state, fromHost) {
+  /* ----------------------- what arrives from the room ----------------------- */
+
+  window.applySyncedMedia = function (state) {
     if (!state || typeof state !== "object") return;
+
     if (state.action === "clear") {
-      applyingRemote = true;
-      player.pause(); player.removeAttribute("src"); player.load(); player.hidden = true;
-      applyingRemote = false; statusText("Shared media cleared."); return;
-    }
-    if (state.url && validUrl(state.url) && player.src !== state.url) {
-      applyingRemote = true;
-      player.src = state.url; input.value = state.url; player.hidden = false; player.load();
-      applyingRemote = false;
-      if (state.action !== "load") {
-        player.addEventListener("loadedmetadata", function onMetadata() {
-          player.removeEventListener("loadedmetadata", onMetadata);
-          window.applySyncedMedia(Object.assign({}, state, { url: undefined }), fromHost);
-        });
-      }
+      if (cur) { clearPlayers(); say("Shared media cleared."); }
       return;
     }
-    applyingRemote = true;
-    try {
-      if (state.action === "load") {
-        statusText("Synchronized media loaded. Press play to start playback.");
-      } else if (["play", "pause", "seek"].indexOf(state.action) >= 0 && !player.hidden && Number.isFinite(state.time) && state.time >= 0) {
-        var target = state.time;
-        if (state.action === "play" && Number.isFinite(state.at)) target += Math.min(2, Math.max(0, (Date.now() - state.at) / 1000));
-        if (Number.isFinite(player.duration) && player.duration > 0) target = Math.min(target, player.duration);
-        if (Math.abs(player.currentTime - target) > 0.8) { try { player.currentTime = target; } catch (e) {} }
-        if (state.action === "play") player.play().catch(function () { statusText("Playback is synchronized, but your browser needs you to press play."); });
-        if (state.action === "pause") player.pause();
-      }
-    } finally { applyingRemote = false; }
+
+    // a different link than mine: load it first, then apply the rest of this message
+    if (state.url && validUrl(state.url) && (!cur || cur.url !== new URL(state.url).href)) {
+      var media = detect(state.url);
+      if (!media) return;
+      var rest = Object.assign({}, state, { url: undefined });
+      show(media).then(function (ok) {
+        if (ok && state.action !== "load") window.applySyncedMedia(rest);
+        else if (ok) say("Shared media loaded by someone in the room.");
+      });
+      return;
+    }
+
+    if (!cur || cur.kind === "twitch") return;
+    if (["play", "pause", "seek"].indexOf(state.action) < 0 || !Number.isFinite(state.time) || state.time < 0) return;
+
+    var target = state.time;
+    if (state.action === "play" && Number.isFinite(state.at)) target += Math.min(2, Math.max(0, (Date.now() - state.at) / 1000));
+    if (cur.kind === "direct" && Number.isFinite(player.duration) && player.duration > 0) target = Math.min(target, player.duration);
+
+    quiet(2500);                                             // the events this causes are not new commands
+    if (Math.abs(getTime() - target) > 0.8) seekTo(target);
+    if (state.action === "play") doPlay();
+    else if (state.action === "pause") doPause();
   };
 
-  // Small periodic drift correction while playing; never fights the user's seeking gesture.
-  window.addEventListener("pagehide", function () { if (driftTimer) clearInterval(driftTimer); });
-
+  window.addEventListener("pagehide", function () { clearInterval(ytTimer); });
 })();

@@ -23,7 +23,7 @@
 
 .streamGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -81,23 +81,81 @@
 .laserLayer{position:absolute;inset:0;z-index:1;pointer-events:none;touch-action:none}
 .laserLayer.on{pointer-events:auto;cursor:crosshair}
 .laserDot{
-  position:absolute;width:16px;height:16px;border-radius:50%;
-  background:#ff2b3d;box-shadow:0 0 12px 4px rgba(255,43,61,.8);
+  --c:#ff2b3d;                         /* set per person from their name */
+  position:absolute;width:clamp(9px,2.4cqw,16px);aspect-ratio:1;border-radius:50%;
+  background:var(--c);box-shadow:0 0 12px 4px color-mix(in srgb,var(--c) 75%,transparent);
   transform:translate(-50%,-50%);   /* the dot's CENTRE sits on the left/top we set */
   pointer-events:none;
 }
+.laserDot[data-name]::after{content:attr(data-name);position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:6px;
+  padding:1px 6px;border-radius:6px;background:rgba(0,0,0,.7);color:var(--c);font:600 .7rem/1.4 system-ui,sans-serif;white-space:nowrap}
+.tile .lbl{color:var(--u,inherit)}
+/* small windows: the pointer must not block tapping them, but its dot still shows */
+.streamGrid.focus .tile:not(.isFocus) .laserLayer{pointer-events:none}
+/* the floating (picture-in-picture) window holds only the tile */
+.tile.inPip{width:100vw;height:100vh;max-height:none!important;aspect-ratio:auto!important;border-radius:0;order:0!important;margin:0}
+.tile.inPip .tileBtn:not(.pipBtn){display:none}
+.pipHold{display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;color:var(--muted);font-size:.9rem;border:2px dashed var(--red)}
 .audioCtl{z-index:2}                /* keep the volume controls clickable above the layer */
 .streamBtn[aria-pressed="true"]{background:var(--red);color:#000}
 
+
+/* ---------- tile layouts ---------- */
+/* 1 screen: alone.  2: side by side.  3: two on top, one wide below.  4: 2 x 2.  5-6: rows of three. */
+.tile { cursor: pointer; }
+.streamGrid[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
+.streamGrid[data-count="3"] .tile:nth-child(3) { grid-column: 1 / -1; aspect-ratio: 32 / 9; }
+.streamGrid[data-count="5"], .streamGrid[data-count="6"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.streamGrid[data-count="5"] .tile, .streamGrid[data-count="6"] .tile { grid-column: span 2; }
+.streamGrid[data-count="5"] .tile:nth-child(n+4) { grid-column: span 3; }
+
+/* tapped window: it becomes the main one, everyone else shrinks to small thumbnails underneath */
+.streamGrid.focus { display: flex !important; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+.streamGrid.focus .tile { flex: 0 0 clamp(110px, 15vw, 180px); aspect-ratio: 16 / 9 !important; border-radius: 12px; }
+.streamGrid.focus .tile.isFocus { flex: 0 0 100%; max-height: 68vh; border-radius: clamp(10px, 2vw, 28px); }
+.streamGrid.focus .tile.isFocus .lbl { font-size: 1.3rem; }
+/* thumbnails: just the picture, a small name and the remove button */
+.streamGrid.focus .tile:not(.isFocus) .lbl { left: 6px; bottom: 4px; font-size: .7rem; }
+.streamGrid.focus .tile:not(.isFocus) .audioCtl,
+.streamGrid.focus .tile:not(.isFocus) .tileBtn:not(:last-child) { display: none; }
+.streamGrid.focus .tile:not(.isFocus) .tileBar { top: 4px; right: 4px; }
+.streamGrid.focus .tile:not(.isFocus) .tileBtn { width: 22px; height: 22px; font-size: .75rem; }
+.tile:fullscreen { aspect-ratio: auto !important; max-height: none !important; }
+.tile:-webkit-full-screen { aspect-ratio: auto !important; max-height: none !important; }
 
 /* Mobile layout */
 @media (max-width: 640px) {
   #v-stream { align-items:stretch; }
   #v-stream .streamToolbar, #v-stream .streamGrid, #v-stream .gridEmpty { width: calc(100% - 24px); }
-  .streamGrid { grid-template-columns: 1fr; }
+  .streamGrid, .streamGrid[data-count] { grid-template-columns: minmax(0, 1fr); }
+  .streamGrid[data-count] .tile { grid-column: auto !important; aspect-ratio: 16 / 9 !important; }
+  .streamGrid.focus .tile { flex-basis: calc(33.333% - 7px); }
+  .streamGrid.focus .tile.isFocus { flex-basis: 100%; }
   .tile .lbl { left: 10px; bottom: 8px; font-size: .95rem; }
   .streamActions, .streamOpts, #streamNote, #startCamera, #laserBtn { width:calc(100% - 24px); }
   .streamActions { margin-top:4px; }
   .streamActions .streamBtn { margin-top:8px; }
   .streamOpts { flex-wrap:wrap; gap:8px 14px; }
+}
+
+/* ---------- responsive: the layout follows the size of the stream area, not the screen ---------- */
+.tile { container: tile / inline-size; }
+#v-stream { container: sv / inline-size; }
+.streamGrid:not(.focus) .tile { max-height: 72dvh; }
+@container sv (max-width: 600px) {
+  .streamGrid[data-count]:not(.focus) { grid-template-columns: minmax(0, 1fr) !important; }
+  .streamGrid[data-count]:not(.focus) .tile { grid-column: auto !important; aspect-ratio: 16 / 9 !important; }
+}
+@container sv (min-width: 1500px) {
+  .streamGrid[data-count="4"], .streamGrid[data-count="3"] { max-width: 1400px; margin-inline: auto; }
+}
+/* small windows: fewer, smaller controls so the picture stays visible */
+@container tile (max-width: 300px) {
+  .lbl { font-size: .8rem !important; }
+  .audioCtl input { display: none; }
+  .tileBtn { width: 26px; height: 26px; font-size: .8rem; }
+}
+@container tile (max-width: 200px) {
+  .tileBar .tileBtn:not(:last-child) { display: none; }
+  .audioCtl { display: none; }
 }
