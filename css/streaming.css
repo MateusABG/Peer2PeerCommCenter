@@ -8,11 +8,11 @@
 .streamBtn{
   margin-top:16px;align-self:flex-start;
   height:44px;padding:0 22px;
-  background:#000;color:var(--red);
+  background:var(--panel);color:var(--red);
   border:2px solid var(--red);border-radius:0 18px 0 0;
   font-weight:700;cursor:pointer;
 }
-.streamBtn:hover{background:#1a0000}
+.streamBtn:hover{background:var(--hover)}
 
 /* ---------- the grid ---------- */
 /* "#v-stream" in the selectors matters: "#v-stream > :not(h3)" sets max-width:100% and would win otherwise. */
@@ -32,27 +32,27 @@
 .gridEmpty {
   display: grid; place-items: center; margin-top: 12px; padding: 12px;
   aspect-ratio: 16 / 9; max-height: 50vh; text-align: center;
-  background: #000; color: var(--muted);
-  border: 2px solid #2a0000; border-radius: clamp(10px, 2vw, 28px);
+  background:var(--panel); color: var(--muted);
+  border: 2px solid var(--border-soft); border-radius: clamp(10px, 2vw, 28px);
 }
 .gridEmpty[hidden] { display: none; }
 
 .tile {
   position: relative; margin: 0; aspect-ratio: 16 / 9;
-  background: #000; border: 2px solid #2a0000;
+  background:var(--panel); border: 2px solid var(--border-soft);
   border-radius: clamp(10px, 2vw, 28px); overflow: hidden; isolation: isolate;
 }
 .tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
-.tile .lbl { left: 14px; bottom: 10px; font-size: 1.05rem; color: #ff2b3d; }
+.tile .lbl { left: 14px; bottom: 10px; font-size: 1.05rem; color: var(--red); }
 
 .tileBar { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; gap: 6px; }
 .tileBtn {
   width: 32px; height: 32px; border: 0; border-radius: 50%;
-  background: rgba(0, 0, 0, .65); color: #fff; font-size: 1rem; cursor: pointer;
+  background: rgba(0, 0, 0, .65); color:var(--text); font-size: 1rem; cursor: pointer;
 }
-.tileBtn:hover, .tileBtn:focus-visible { background: var(--red); color: #000; }
+.tileBtn:hover, .tileBtn:focus-visible { background: var(--red); color:var(--on-accent); }
 .tileBtn[hidden] { display: none; }
-.tileBtn[aria-pressed="true"] { background: var(--red); color: #000; }
+.tileBtn[aria-pressed="true"] { background: var(--red); color:var(--on-accent); }
 
 /* full screen: the tile fills the whole display */
 .tile:fullscreen { width: 100vw; height: 100vh; aspect-ratio: auto; border: 0; border-radius: 0; }
@@ -67,14 +67,14 @@
   position: absolute; z-index: 5; top: calc(100% + 6px); left: 0;
   min-width: 220px; max-height: 260px; overflow: auto;
   margin: 0; padding: 6px; list-style: none;
-  background: #0b0b0b; border: 2px solid var(--red); border-radius: 0 18px 0 0;
+  background: var(--panel); border: 2px solid var(--red); border-radius: 0 18px 0 0;
 }
 .addMenu[hidden] { display: none; }
 .addMenu button {
   display: block; width: 100%; padding: 8px 12px; border: 0; border-radius: 8px;
-  background: none; color: #fff; text-align: left; cursor: pointer;
+  background: none; color:var(--text); text-align: left; cursor: pointer;
 }
-.addMenu button:hover, .addMenu button:focus-visible { background: #1a0000; }
+.addMenu button:hover, .addMenu button:focus-visible { background: var(--hover); }
 
 /* ---------- laser pointer ---------- */
 /* The layer covers the whole stream window but ignores the mouse until Laser mode is on. */
@@ -97,7 +97,7 @@
 .tile.inPip .tileBtn:not(.pipBtn){display:none}
 .pipHold{display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;color:var(--muted);font-size:.9rem;border:2px dashed var(--red)}
 .audioCtl{z-index:2}                /* keep the volume controls clickable above the layer */
-.streamBtn[aria-pressed="true"]{background:var(--red);color:#000}
+.streamBtn[aria-pressed="true"]{background:var(--red);color:var(--on-accent)}
 
 
 /* ---------- tile layouts ---------- */

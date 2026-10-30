@@ -1,5 +1,5 @@
 /* Cinema-room media is deliberately separate from the livestream view. */
-.shared-media{width:calc(100% - 48px);max-width:960px;margin:18px auto;padding:16px;background:#0c0809;border:1px solid #3a1016;border-radius:16px;box-sizing:border-box}
+.shared-media{width:calc(100% - 48px);max-width:960px;margin:18px auto;padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-sizing:border-box}
 .shared-media h4{margin:0 0 6px;color:var(--red);font-size:1rem}
 .shared-media p{margin:6px 0 12px;color:var(--muted);font-size:.88rem;line-height:1.45}
 .media-load-form{display:flex;gap:10px;align-items:center;flex-wrap:wrap}

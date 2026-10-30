@@ -7,16 +7,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Room · Peerly</title>
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/base.css?v=7">
-  <link rel="stylesheet" href="css/room.css?v=7">
-  <link rel="stylesheet" href="css/streaming.css?v=7">
-  <link rel="stylesheet" href="css/media-sync.css?v=7">
+  <link rel="stylesheet" href="css/themes.css?v=11">
+  <link rel="stylesheet" href="css/base.css?v=11">
+  <link rel="stylesheet" href="css/room.css?v=11">
+  <link rel="stylesheet" href="css/streaming.css?v=11">
+  <link rel="stylesheet" href="css/media-sync.css?v=11">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#8f0014">
   <link rel="icon" href="icon.png" type="image/png">
+  <script src="js/theme.js?v=11"></script>
 </head>
 
 <body>
+
 
   <section id="room">
     <aside class="left">
@@ -59,6 +62,7 @@
         <button id="leaveBtn" class="leave">Leave</button>
       </nav>
       <div class="count">Users in room: <span id="userCount">1</span></div>
+      <div class="themePick"><select class="themeSelect" aria-label="Theme" title="Theme"></select></div>
     </aside>
 
     <main>

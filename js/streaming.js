@@ -287,6 +287,7 @@ async function openDocPip(id) {
             win.document.head.appendChild(l);
         }
     });
+    win.document.documentElement.setAttribute("data-theme", document.documentElement.getAttribute("data-theme") || "escuro");
     win.document.body.style.cssText = "margin:0;background:#000;overflow:hidden";
 
     const hold = document.createElement("div");           // keeps the tile's place in the grid

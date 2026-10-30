@@ -1,0 +1,146 @@
+/* ============================================================
+   Peerly themes. Colors only: every rule in the other
+   stylesheets reads these variables, no layout lives here.
+
+   Per theme you set 9 values; the rest is derived from them.
+   ============================================================ */
+
+/* 10. Escuro: the classic dark theme (default) */
+:root, :root[data-theme="escuro"]{
+  color-scheme:dark;
+  --bg:#050000; --panel:#000; --line:#ff1a1a; --red:#d80000; --deep:#6e0000;
+  --text:#f4eaea; --muted:#a58f8f; --ok:#3ddc84; --on-accent:#000;
+  --err:#ff7a7a; --speak:#7dffb0;
+}
+
+/* ---------- derived values (shared by every theme) ---------- */
+:root, :root[data-theme]{
+  --hover:color-mix(in srgb,var(--red) 14%,var(--panel));
+  --border:color-mix(in srgb,var(--line) 24%,var(--panel));
+  --border-soft:color-mix(in srgb,var(--line) 15%,var(--panel));
+  --dot:color-mix(in srgb,var(--muted) 30%,var(--panel));
+  --dot-line:color-mix(in srgb,var(--muted) 50%,var(--panel));
+  --poll-bg:color-mix(in srgb,var(--text) 18%,var(--panel));
+  --poll-hover:color-mix(in srgb,var(--text) 28%,var(--panel));
+  --leave-bg:color-mix(in srgb,var(--red) 28%,var(--panel));
+  --login-from:var(--panel);
+  --login-to:color-mix(in srgb,var(--line) 24%,var(--panel));
+  --link:color-mix(in srgb,var(--red) 45%,var(--text));
+  --placeholder:color-mix(in srgb,var(--muted) 60%,var(--panel));
+}
+
+/* ===================== THEMED PALETTES ===================== */
+
+/* 1. Mercenary: warm brown and burnt orange */
+:root[data-theme="mercenary"]{
+  color-scheme:dark;
+  --bg:#1c1713; --panel:#2a231d; --line:#8f6f45; --red:#e0643a; --deep:#6b2f1e;
+  --text:#f3e5c8; --muted:#b39f80; --ok:#6fcf6a; --on-accent:#1b1511;
+  --err:#ff8a6a; --speak:#8fe08a;
+}
+
+/* 2. Island Life: cream and leaf green (light) */
+:root[data-theme="island-life"]{
+  color-scheme:light;
+  --bg:#f4ecd2; --panel:#fffaec; --line:#6cc48a; --red:#2b9157; --deep:#cdeccd;
+  --text:#5a4630; --muted:#8a7a60; --ok:#2e9e5b; --on-accent:#ffffff;
+  --err:#c2443a; --speak:#1fbf6d;
+}
+
+/* 3. Operator: steel blue and tactical yellow */
+:root[data-theme="operator"]{
+  color-scheme:dark;
+  --bg:#101318; --panel:#1a1e25; --line:#4f7ab8; --red:#f0b23a; --deep:#3a3318;
+  --text:#e8e6df; --muted:#8f959e; --ok:#7fd35a; --on-accent:#13161b;
+  --err:#ff8a7a; --speak:#9be97a;
+}
+
+/* 4. Test Chamber: lab white and safety orange (light) */
+:root[data-theme="test-chamber"]{
+  color-scheme:light;
+  --bg:#dde3e8; --panel:#f8fafb; --line:#2f3a44; --red:#d95f00; --deep:#cfe6f7;
+  --text:#1d252c; --muted:#5b6872; --ok:#1e88e5; --on-accent:#ffffff;
+  --err:#c62828; --speak:#1e88e5;
+}
+
+/* 5. Cubelands: dirt and grass */
+:root[data-theme="cubelands"]{
+  color-scheme:dark;
+  --bg:#1d1812; --panel:#2a2117; --line:#5aa832; --red:#5fb336; --deep:#4a3622;
+  --text:#eadfc8; --muted:#a8987a; --ok:#7bd44a; --on-accent:#0f1f08;
+  --err:#ff8470; --speak:#9af06a;
+}
+
+/* 6. Speed Rush: electric blue and gold */
+:root[data-theme="speed-rush"]{
+  color-scheme:dark;
+  --bg:#050f2e; --panel:#0a1b52; --line:#2c75ff; --red:#ffd21f; --deep:#143a9c;
+  --text:#ffffff; --muted:#9bb4f0; --ok:#4cf09a; --on-accent:#0a1030;
+  --err:#ff8a8a; --speak:#4cf09a;
+}
+
+/* 7. Neon Nights: neon magenta and cyan on night violet */
+:root[data-theme="neon-nights"]{
+  color-scheme:dark;
+  --bg:#080510; --panel:#110a1f; --line:#05d9e8; --red:#ff2a6d; --deep:#4a1048;
+  --text:#f1f1ff; --muted:#8d84b3; --ok:#fcee0a; --on-accent:#0a0512;
+  --err:#ff7aa0; --speak:#fcee0a;
+}
+
+/* 8. Space Command: amber console, holo blue, deep space */
+:root[data-theme="space-command"]{
+  color-scheme:dark;
+  --bg:#03060b; --panel:#080e17; --line:#2f8fe0; --red:#ff8a1f; --deep:#10345a;
+  --text:#dbeaff; --muted:#7f9bb8; --ok:#3ddc84; --on-accent:#1a0d00;
+  --err:#ff8a7a; --speak:#6fe9ff;
+}
+
+/* 9. Containment: hazard amber on facility olive */
+:root[data-theme="containment"]{
+  color-scheme:dark;
+  --bg:#0d100a; --panel:#161a10; --line:#ff8c00; --red:#ff9a1a; --deep:#44350c;
+  --text:#f2e6bf; --muted:#9a9570; --ok:#8fe03a; --on-accent:#140f00;
+  --err:#ff8a6a; --speak:#b6f060;
+}
+
+/* ====================== GENERAL THEMES ===================== */
+
+/* 11. Deep Ocean: deep blue and turquoise */
+:root[data-theme="deep-ocean"]{
+  color-scheme:dark;
+  --bg:#02101b; --panel:#061b2b; --line:#14b8c4; --red:#1fd1c2; --deep:#0b4a6b;
+  --text:#dff6ff; --muted:#7fb0c4; --ok:#3ddc84; --on-accent:#02161c;
+  --err:#ff8a8a; --speak:#7dffe0;
+}
+
+/* 12. Sakura: soft pink and cream (light) */
+:root[data-theme="sakura"]{
+  color-scheme:light;
+  --bg:#fff0ea; --panel:#fffaf4; --line:#f0a0b8; --red:#d0517c; --deep:#fbd6e2;
+  --text:#4a2b36; --muted:#95707c; --ok:#3a9d6a; --on-accent:#ffffff;
+  --err:#c2334f; --speak:#2fb57a;
+}
+
+/* 13. Arctic: icy blue (light) */
+:root[data-theme="arctic"]{
+  color-scheme:light;
+  --bg:#e4f1fa; --panel:#f7fcff; --line:#79bde6; --red:#1d79bb; --deep:#cde6f6;
+  --text:#12324a; --muted:#587a93; --ok:#1f9d6b; --on-accent:#ffffff;
+  --err:#c23b3b; --speak:#17b27c;
+}
+
+/* 14. Starlight: midnight blue and lavender */
+:root[data-theme="starlight"]{
+  color-scheme:dark;
+  --bg:#080a22; --panel:#0f1236; --line:#9a89ff; --red:#b8a6ff; --deep:#2b2872;
+  --text:#ece9ff; --muted:#a09bd0; --ok:#6be3b4; --on-accent:#13103a;
+  --err:#ff9ab0; --speak:#8ff0cf;
+}
+
+/* 15. Mystic Forest: dark green and natural tones */
+:root[data-theme="mystic-forest"]{
+  color-scheme:dark;
+  --bg:#09130e; --panel:#112019; --line:#6a9a5e; --red:#86b87c; --deep:#2f4125;
+  --text:#e6efdc; --muted:#9bb09a; --ok:#a6d96a; --on-accent:#0c1a10;
+  --err:#ffa08a; --speak:#c1f27a;
+}
