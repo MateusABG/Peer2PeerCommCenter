@@ -1,11 +1,11 @@
 /* Conservative app-shell cache. PeerJS and Google Fonts stay network-only. */
-const CACHE_NAME = "peerly-shell-v11";
+const CACHE_NAME = "peerly-shell-v12";
 const APP_SHELL = [
   "./", "./index.html", "./room.html", "./manifest.webmanifest",
   "./css/themes.css", "./css/base.css", "./css/login.css", "./css/room.css", "./css/streaming.css", "./css/media-sync.css",
   "./js/theme.js", "./js/config.js", "./js/login.js", "./js/room.js", "./js/whiteboard.js", "./js/streaming.js",
   "./js/laser.js", "./js/voices.js", "./js/speaking.js", "./js/network.js", "./js/notifications.js",
-  "./js/media-sync.js", "./js/export.js", "./js/backup.js", "./js/pwa.js", "./icon.png", "./icon-192.png", "./icon-512.png", "./logo.png"
+  "./js/media-sync.js", "./js/export.js", "./js/pwa.js", "./icon.png", "./icon-192.png", "./icon-512.png", "./logo.png"
 ];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));

@@ -360,14 +360,6 @@
     return u ? u.name : "";
   };
 
-  // backup.js: show a line of an imported chat (only on this screen, never sent to anyone)
-  window.importChatLine = function (from, text, isSys, img) {
-    var was = replaying;
-    replaying = true;
-    addMessage(from, text, false, isSys, img);
-    replaying = was;
-  };
-
   // streaming.js asks who owns a stream ("s:<peerId>")
   window.nameOfStream = function (id) {
     var pid = String(id).replace(/^[sc]:/, "");   // strips "s:" (screen) or "c:" (camera)

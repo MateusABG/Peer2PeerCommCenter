@@ -93,7 +93,7 @@ canvas{background:#fff;border-radius:10px;max-width:100%;max-height:100%;touch-a
 .file .fdl{flex:none;padding:6px 12px;color:var(--on-accent);background:var(--red);border-radius:0 10px 0 0;text-decoration:none;font-weight:700;font-size:.85rem}
 .file .fdl:hover{background:var(--line)}
 .typing{min-height: 1.4em; padding: 0 16px; color:var(--muted);font-size:.85rem;font-style:italic;}
-.count{color:var(--text);border-radius:10px;padding:0 7px;font-size:.75rem;font-weight:700;margin-left:6px}
+.count{background:var(--red);color:var(--text);border-radius:10px;padding:0 7px;font-size:.75rem;font-weight:700;margin-left:6px}
 .msg{position:relative}
 .msg .acts{position:absolute;top:-14px;right:8px;display:none;gap:2px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:2px 4px;z-index:2}
 .msg:hover .acts,.msg:focus-within .acts{display:flex}
